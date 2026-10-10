@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.sites-runtime/
+.env.local
+*.zip
+*.log
+.openai/
+tsconfig.tsbuildinfo
+.env
+*.tar.gz
