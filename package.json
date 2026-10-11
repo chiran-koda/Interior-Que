@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "test": "vitest run",
-    "preview": "vite preview --host 127.0.0.1"
+    "test": "vitest run src",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-interior-que \"vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
+    "firebase": "^12.19.0",
     "idb": "^8.0.3",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
@@ -17,13 +19,20 @@
     "recharts": "^3.2.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
     "fake-indexeddb": "^6.2.5",
+    "firebase-tools": "^15.33.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.9",
     "vite-plugin-pwa": "^1.1.0",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6",
+    "@firebase/app": "0.16.2",
+    "@firebase/app-compat": "0.5.18"
   }
 }

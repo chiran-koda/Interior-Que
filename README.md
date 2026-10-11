@@ -1,50 +1,66 @@
-# Interior Que — Project Management
+# Interior Que
 
-A responsive React + TypeScript progressive web app for interior studio operations. Built with Vite, Recharts, IndexedDB, and a generated Workbox service worker. Uses direct Google Identity Services authorization with the `drive.file` scope; no OAuth secrets or access tokens are saved to disk.
+Interior project management for an entire firm: owners, designers, site supervisors and clients. A React + TypeScript PWA with Firebase Google authentication, Firestore studio data and private Google Drive file links/uploads.
 
-## Run
+Live app: https://chiran-koda.github.io/Interior-Que/
 
-Use Node 22.12 or later. Run `npm install`, `npm run dev`, `npm test`, and `npm run build`. Serve `dist` over HTTPS. Development preview is at http://127.0.0.1:5173.
+## Daily work
 
-## Google Drive setup
+- Owners create studios, projects and a five-step starter checklist; invite people by their Google email, assign projects and tasks, and record receipts/expenses.
+- Designers work from their task list, plan materials, share drawings and request decisions.
+- Supervisors record site progress and blockers, complete tasks and track delivery of materials.
+- Clients see only assigned projects, published site updates/files and shared decisions. They can approve or request changes with review notes.
+- Team updates default to internal. Owners control membership and project access. Invitations are saved in the app; no email is sent automatically.
+- The interactive demo uses separate device storage. Earlier personal tools and records remain accessible from the welcome screen.
 
-1. Enable Google Drive API in your Google Cloud project.
-2. Configure the consent screen and test users, or complete Google’s required publishing process.
-3. Create a Web application OAuth client. Add the exact JavaScript origins `https://chiran-koda.github.io` and `http://127.0.0.1:5173`. An OAuth origin does not include the `/interior-que/` path.
-4. Set the public client ID through the app’s Settings, or use `VITE_GOOGLE_CLIENT_ID` when building. No client secret is needed for this browser token flow.
-5. Connect Drive. Each account gets a separate local workspace. Start a new workspace or explicitly import the local workspace in Settings.
-6. Add files to a project, then choose **Sync uploads**. Files are created in `Interior Que / Project name` with stable project IDs and metadata. Access tokens expire; reconnect to continue.
+## Development backend
 
-Uploads are stored as blobs in IndexedDB before syncing. Failed uploads remain queued. Retry looks up the unique attachment ID to avoid a duplicate after an uncertain response. Drive uploads are bounded at 25 MB per file. Drive files are private; the app never makes them public.
+The default web configuration points only to **interior-que-development**, the new Interior Que Development Firebase project. Firestore is Standard edition in **asia-south1 (Mumbai)**; the project uses the free Spark plan.
 
-## Workflows
+Google sign-in is enabled for this development app. Each firm creates its own studio. Access is enforced by Firestore rules, with verified authentication, active membership, assigned projects and role checks.
 
-- Projects and clients: create/edit records, search, filter, grid/list layouts and detail panels.
-- Estimation: room-wise quantities, material specifications, rates, GST and discounts; printable A4 quotation.
-- Payments: record receipts and expenses; calculations derived from transactions; CSV export.
-- Purchases and inventory: order status, material rates, stock levels, reorder shortcuts and exports. Delivery changes and stock adjustments are separate explicit actions.
-- Site progress: board/list tasks, assignments, priorities, due dates, mark complete and calculated project progress.
-- Team: assignment roster and derived workload, without account invitations.
-- Documents: local file queue, project galleries, Drive refresh and download.
-- Reports: derived financial summaries and printable reports.
-- Settings: studio details, install guidance, Drive connection, backup and restore, local JSON export/import.
+All application data is under:
 
-## Persistence and scope
+    interiorQueCompanies/{companyId}/
+      members, projects, tasks, materials, updates, approvals, files,
+      expenses, receipts, invites
 
-This release is an offline-first personal workspace. Structured records are saved on the current device, separately for each connected Google account. Drive backup and restore explicitly move records between devices; uploads sync separately. It does **not** provide shared simultaneous team editing, role-based permissions, background token refresh, automatic multi-device database synchronization, email/WhatsApp sending, invoice issuance, or forecasted profit. A shared production studio should add an authenticated backend with membership rules and conflict resolution before enabling these capabilities.
+The root company record contains its name and owner ID. Expenses and receipts are owner-only collections. Unrelated namespaces are denied. Client queries include published visibility constraints. Decisions are assigned to one reviewer and cannot be rewritten after review.
 
-Never clear browser storage before queued files are uploaded and records backed up. JSON backups include file metadata and Drive links, not unsynced binary files. Restore saves the previous workspace under `<account-id>-before-restore` in the IndexedDB workspaces store.
+**DesignQuote production data, authentication, rules and subscriptions were not changed.** Future integration needs a tested rollout of the Interior Que namespace and an explicit cross-origin sign-in handoff. Sharing a Firebase project alone does not automatically sign a browser into a different website. Interior Que subscriptions/entitlements must remain separate from DesignQuote; billing is not implemented in this development release.
 
-PWA installation requires a secure origin and browser support. The service worker precaches the app shell, fonts, icons and local sample photos. Google authorization and Drive access require connectivity. Access tokens are kept only in memory. Sample imagery is from Unsplash and is marked as reference photography; sample clients use example.com addresses.
+Firebase web configuration and OAuth client IDs are public application identifiers, not administrator credentials. Never place service accounts, OAuth client secrets or refresh tokens in this repository or its frontend build.
 
-## GitHub Pages deployment
+## Google Drive
 
-The live app is published at `https://chiran-koda.github.io/Interior-Que/`. `.github/workflows/pages.yml` tests and builds every push to `main`, then deploys using the official GitHub Pages actions. Set the repository's Pages source to **GitHub Actions**. Builds use `VITE_BASE_PATH=/Interior-Que/`; local development uses `/`. Fonts, photos, icons, the manifest, and the service worker respect that base path.
+Files are stored in the uploader's Drive, organized into Interior Que/project folders. The app saves their links and captions against the project. Drive access requests use drive.file, and access tokens stay in memory. Uploads are limited to 25 MB and verified against the returned file size. Stable attachment IDs let a retry find a previously completed upload.
 
-GitHub Pages serves the app publicly. Project data is stored in each browser, separately for connected Google accounts; it is not committed to this repository. Publishing does not add multiuser cloud storage or team sign-up.
+A project link does not change the underlying Drive file's sharing permissions. Recipients must also have permission in Google Drive. Files are never made public automatically. Existing HTTPS Drive links can be added without connecting uploads.
 
-Hosting origins have separate browser storage. Export your records from the former preview before moving to GitHub Pages, then import them in Settings. Unsynced binary attachments must be uploaded to Drive from the old origin first. Existing storage and Drive metadata keys retain the legacy internal prefix for compatibility; the displayed app name, new folder names, and installation branding are Interior Que.
+The development OAuth web client is configured with Drive API enabled and the GitHub Pages/local test origins. Its public client ID is included as the default. Advanced connection settings accept another public client ID when needed. Individual users consent when they connect their own Drive. Shared-workspace uploads require an internet connection; the older personal workspace retains its device upload queue.
+
+## Local development
+
+    npm ci
+    npm run dev
+    npm test
+    npm run test:rules
+    npm run build
+
+Use Node 22 and Java 21 for Firestore emulator tests. The emulator uses demo-interior-que; tests do not access live Firebase data. The GitHub Pages workflow runs application tests, database access tests and a production build before publishing.
+
+This release is locked to the registered Interior Que Development web configuration. The configuration guard rejects different project IDs, API keys, authentication domains and app IDs before starting authentication. A production integration requires a separately tested code release.
+
+To deploy development rules and indexes after tests:
+
+    npx firebase deploy --only firestore --project interior-que-development
+
+The frontend build uses VITE_BASE_PATH=/Interior-Que/ on GitHub Pages. Its manifest and service worker use the same scope. The app offers an update prompt when a new version is available.
 
 ## Verification
 
-Run `npm test` for financial consistency, quote calculations, backup validation and mocked Drive request isolation/idempotency. A live Drive upload requires the configured OAuth client and user consent; mocked tests do not establish live Google authorization.
+Application tests cover existing calculations, validation, Drive requests and new role-scoped data/progress behavior. Firestore emulator tests cover signed-out and unverified denial, isolated companies, paused access, owner creation, atomic project checklists, project-scoped staff, client visibility, reviewer-only decisions, assigned staff validation, invitation acceptance and rejected privilege escalation.
+
+Browser checks cover responsive navigation, project creation, task completion/progress, persisted demo changes, internal site updates and client review validation. Live Google sign-in, studio creation, project/checklist creation, task completion/progress, deadline editing and material delivery were verified against the separate development backend. Per-user Google Drive authorization was also verified.
+
+The source repository is public. Studio records and Drive files are stored in their respective services, not committed to GitHub. Demo data is fictional.

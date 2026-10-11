@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signed(){return request.auth != null && request.auth.token.email_verified == true;}
+  function email(){return request.auth.token.email.lower();}
+  function memberPath(company){return /databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(request.auth.uid);}
+  function member(company){return signed() && exists(memberPath(company)) && get(memberPath(company)).data.active == true;}
+  function owner(company){return member(company) && get(memberPath(company)).data.role == 'owner';}
+  function staff(company){return member(company) && get(memberPath(company)).data.role in ['owner','designer','supervisor'];}
+  function access(company,project){return member(company) && (owner(company) || project in get(memberPath(company)).data.projectIds);}
+  function text(value,max){return value is string && value.size() <= max;}
+  function ids(value){return value is list && value.size() <= 25;}
+  function projectExists(company,project){return existsAfter(/databases/$(database)/documents/interiorQueCompanies/$(company)/projects/$(project));}
+  function assignedStaff(company,project){return staff(company) && access(company,project);}
+  function validAssignee(company,data){return data.assigneeId == '' || (exists(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(data.assigneeId)) && get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(data.assigneeId)).data.active == true && get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(data.assigneeId)).data.role in ['owner','designer','supervisor'] && (get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(data.assigneeId)).data.role == 'owner' || data.projectId in get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(data.assigneeId)).data.projectIds));}
+  function visible(company,data){return access(company,data.projectId) && (staff(company) || data.clientVisible == true);}
+  match /interiorQueCompanies/{company} {
+   allow create: if signed() && request.resource.data.keys().hasOnly(['name','ownerId']) && request.resource.data.ownerId == request.auth.uid && text(request.resource.data.name,120) && request.resource.data.name.size()>0;
+   allow read: if member(company);
+   allow update: if owner(company) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']) && text(request.resource.data.name,120);
+   match /members/{user} {
+    function validMember(data){return data.keys().hasOnly(['email','name','role','projectIds','active']) && text(data.email,254) && text(data.name,120) && data.role in ['owner','designer','supervisor','client'] && ids(data.projectIds) && data.active is bool;}
+    function invite(){return get(/databases/$(database)/documents/interiorQueCompanies/$(company)/invites/$(email())).data;}
+    allow read: if signed() && (request.auth.uid == user || staff(company));
+    allow create: if signed() && validMember(request.resource.data) && request.resource.data.active == true && request.resource.data.email == email() && request.auth.uid == user && (
+      (getAfter(/databases/$(database)/documents/interiorQueCompanies/$(company)).data.ownerId == user && request.resource.data.role == 'owner' && request.resource.data.projectIds.size() == 0)
+      || (invite().status == 'Pending' && request.resource.data.role == invite().role && request.resource.data.projectIds == invite().projectIds && request.resource.data.name == invite().name)
+    );
+    allow update: if owner(company) && validMember(request.resource.data) && request.resource.data.email == resource.data.email && (user != request.auth.uid ? request.resource.data.role != 'owner' : request.resource.data.role == 'owner' && request.resource.data.active == true);
+   }
+   match /invites/{address} {
+    function validInvite(data){return data.keys().hasOnly(['email','name','role','projectIds','status']) && data.email == address && text(data.name,120) && data.role in ['designer','supervisor','client'] && ids(data.projectIds) && data.status in ['Pending','Accepted'];}
+    allow read: if owner(company) || (signed() && address == email());
+    allow create: if owner(company) && validInvite(request.resource.data) && request.resource.data.status == 'Pending';
+    allow update: if (owner(company) && validInvite(request.resource.data)) || (signed() && address == email() && resource.data.status == 'Pending' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status == 'Accepted' && getAfter(memberPath(company)).data.email == email() && getAfter(memberPath(company)).data.role == resource.data.role && getAfter(memberPath(company)).data.projectIds == resource.data.projectIds);
+   }
+   match /projects/{project} {
+    function validProject(data){return data.keys().hasOnly(['name','clientName','location','start','end','progress','status','brief','image']) && text(data.name,160) && text(data.clientName,120) && text(data.location,300) && text(data.brief,4000) && text(data.image,500) && data.start is string && data.end is string && data.end >= data.start && data.progress is number && data.progress>=0 && data.progress<=100 && data.status in ['Planning','In progress','Completed','Delayed'];}
+    allow read: if access(company,project);
+    allow create: if owner(company) && validProject(request.resource.data);
+    allow update: if validProject(request.resource.data) && (owner(company) || (assignedStaff(company,project) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progress','status'])));
+   }
+   match /tasks/{task} {
+    function validTask(data){return data.keys().hasOnly(['projectId','title','assigneeId','due','stage','priority','status']) && text(data.projectId,100) && text(data.title,300) && text(data.assigneeId,100) && text(data.due,10) && text(data.stage,80) && data.priority in ['Normal','High'] && data.status in ['To do','Doing','Done'];}
+    allow read: if assignedStaff(company,resource.data.projectId);
+    allow create: if validTask(request.resource.data) && validAssignee(company,request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId);
+    allow update: if validTask(request.resource.data) && request.resource.data.projectId == resource.data.projectId && assignedStaff(company,resource.data.projectId) && ((owner(company) && validAssignee(company,request.resource.data)) || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+   }
+   match /updates/{update} {
+    function validUpdate(data){return data.keys().hasOnly(['projectId','authorId','authorName','date','room','summary','blocker','clientVisible']) && text(data.projectId,100) && text(data.authorName,120) && text(data.date,10) && text(data.room,120) && text(data.summary,4000) && text(data.blocker,1000) && data.clientVisible is bool && data.authorId == request.auth.uid;}
+    allow read: if visible(company,resource.data);
+    allow create: if validUpdate(request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId);
+   }
+   match /approvals/{approval} {
+    function validApproval(data){return data.keys().hasOnly(['projectId','title','description','reviewerId','authorId','due','status','response','clientVisible']) && text(data.projectId,100) && text(data.title,300) && text(data.description,4000) && text(data.reviewerId,100) && text(data.authorId,100) && text(data.due,10) && data.status in ['Awaiting decision','Approved','Changes requested'] && text(data.response,2000) && data.clientVisible is bool;}
+    allow read: if visible(company,resource.data);
+    allow create: if validApproval(request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId) && request.resource.data.authorId == request.auth.uid && request.resource.data.status == 'Awaiting decision' && request.resource.data.response == '' && exists(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(request.resource.data.reviewerId)) && get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(request.resource.data.reviewerId)).data.active == true && (get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(request.resource.data.reviewerId)).data.role == 'owner' || request.resource.data.projectId in get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(request.resource.data.reviewerId)).data.projectIds) && (get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(request.resource.data.reviewerId)).data.role != 'client' || request.resource.data.clientVisible == true);
+    allow update: if validApproval(request.resource.data) && visible(company,resource.data) && resource.data.reviewerId == request.auth.uid && resource.data.status == 'Awaiting decision' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','response']) && request.resource.data.status in ['Approved','Changes requested'] && (request.resource.data.status == 'Approved' || request.resource.data.response.size()>0);
+   }
+   match /files/{file} {
+    function validFile(data){return data.keys().hasOnly(['projectId','name','url','room','caption','authorId','clientVisible','date']) && text(data.projectId,100) && text(data.name,300) && text(data.room,120) && text(data.caption,2000) && text(data.date,10) && data.authorId == request.auth.uid && data.clientVisible is bool && data.url is string && data.url.matches('https://drive[.]google[.]com/.*');}
+    allow read: if visible(company,resource.data);
+    allow create: if validFile(request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId);
+   }
+   match /materials/{material} {
+    function validMaterial(data){return data.keys().hasOnly(['projectId','name','quantity','unit','status','notes']) && text(data.projectId,100) && text(data.name,300) && data.quantity is number && data.quantity>0 && text(data.unit,40) && data.status in ['To order','Ordered','On site'] && text(data.notes,2000);}
+    allow read: if assignedStaff(company,resource.data.projectId);
+    allow create: if validMaterial(request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId);
+    allow update: if validMaterial(request.resource.data) && request.resource.data.projectId == resource.data.projectId && assignedStaff(company,resource.data.projectId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+   }
+   match /{journal}/{payment} {
+    function validJournal(){return journal in ['expenses','receipts'];}
+    allow read: if validJournal() && owner(company);
+    allow create: if validJournal() && owner(company) && request.resource.data.keys().hasOnly(['projectId','description','amount','type','date']) && projectExists(company,request.resource.data.projectId) && text(request.resource.data.description,500) && request.resource.data.amount is number && request.resource.data.amount>0 && request.resource.data.type == (journal == 'expenses' ? 'Spent' : 'Received') && text(request.resource.data.date,10);
+   }
+  }
+ }
+}
