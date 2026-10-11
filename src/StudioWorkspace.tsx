@@ -1536,6 +1536,10 @@ export function StudioWorkspace({
           projectId={projectId}
           busy={busy}
           workspaceError={error}
+          driveEmail={driveAccount && drive.connected() ? driveAccount.email : ""}
+          onConnectDrive={() => run(async () => {
+            setDriveAccount(await drive.connectDrive(clientId));
+          }, "Google Drive connected. You can now choose a file.")}
           onClose={() => setDialog(null)}
           onSubmit={async (fd, files) => {
             const f = (key: string) => String(fd.get(key) || "").trim(),
@@ -1870,6 +1874,8 @@ function StudioDialog({
   projectId,
   busy,
   workspaceError,
+  driveEmail,
+  onConnectDrive,
   onClose,
   onSubmit,
 }: {
@@ -1880,6 +1886,8 @@ function StudioDialog({
   projectId: string;
   busy: boolean;
   workspaceError: string;
+  driveEmail: string;
+  onConnectDrive: () => Promise<boolean>;
   onClose: () => void;
   onSubmit: (fd: FormData, files: File[]) => Promise<boolean>;
 }) {
@@ -1925,10 +1933,10 @@ function StudioDialog({
               <span>Project *</span>
               <select
                 name="projectId"
-                aria-readonly={!!record}
+                aria-readonly={kind === "task" && !!record}
                 value={selected}
                 onChange={(e) => {
-                  if (!record) setSelected(e.target.value);
+                  if (kind !== "task" || !record) setSelected(e.target.value);
                 }}
                 required
               >
@@ -2171,14 +2179,29 @@ function StudioDialog({
                 type="url"
                 placeholder="https://drive.google.com/…"
               />
-              <label className="field">
-                <span>Or upload a file to your Google Drive</span>
+              <div className="field">
+                <label htmlFor="studio-file-upload">
+                  Or upload a file to your Google Drive
+                </label>
+                {!driveEmail && (
+                  <Button onClick={onConnectDrive}>
+                    <Cloud size={17} />Connect your Google Drive
+                  </Button>
+                )}
+                {driveEmail && <small>Uploads save to {driveEmail}</small>}
                 <input
+                  id="studio-file-upload"
                   type="file"
+                  disabled={!driveEmail}
                   accept="image/jpeg,image/png,image/webp,.pdf,.dwg,.xlsx,.csv"
                   onChange={(e) => setFiles([...(e.target.files || [])])}
                 />
-              </label>
+                {files[0] && (
+                  <small>
+                    {files[0].name} · {(files[0].size / 1024).toFixed(0)} KB
+                  </small>
+                )}
+              </div>
               <div className="form-grid">
                 <Field label="Room / area" name="room" required />
                 <Field
