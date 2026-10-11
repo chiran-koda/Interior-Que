@@ -497,7 +497,7 @@ export function StudioWorkspace({
         </article>
       ));
   const fileCards = projectRecords(data.files)
-    .filter((f) => matches([f.name, f.room, f.caption].join(" ")))
+    .filter((f) => matches([projectName(f.projectId), f.name, f.room, f.caption].join(" ")))
     .map((photo) => (
       <PhotoCard
         key={photo.id}
@@ -826,7 +826,7 @@ export function StudioWorkspace({
                     label: client ? "Shared photos" : "Awaiting approval",
                     value: client ? data.files.length : waiting.length,
                     text: client
-                      ? "View designs and documents"
+                      ? "View photos shared by your team"
                       : "See what needs a decision",
                     target: client ? "Photos" : "Approvals",
                   },
@@ -1247,8 +1247,9 @@ export function StudioWorkspace({
             <>
               <div className="studio-info">
                 <Cloud size={18} />
-                Choose photos, upload, and follow the progress. Photos are
-                private unless shared with the client.
+                {client
+                  ? "View the project photos your team has shared with you."
+                  : "Choose photos, upload, and follow the progress. Photos are private unless shared with the client."}
               </div>
               {!client && (
                 <StorageMeter
@@ -1422,8 +1423,9 @@ export function StudioWorkspace({
               <section className="studio-panel">
                 <h2>Project photo storage</h2>
                 <p>
-                  Upload from a phone or computer. Photos stay private to the
-                  project team unless you share them with the client.
+                  {client
+                    ? "Your team shares project photos here for you to view."
+                    : "Upload from a phone or computer. Photos stay private to the project team unless you share them with the client."}
                 </p>
                 {!client && (
                   <StorageMeter
