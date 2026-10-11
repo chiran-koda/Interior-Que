@@ -365,7 +365,7 @@ describe("Invitations and data validation", () => {
       }),
     );
   });
-  it("enforces valid material quantities and file destinations", async () => {
+  it("enforces valid material quantities and server-only photo metadata", async () => {
     const d = db("designer");
     const material = {
       projectId: "p1",
@@ -381,15 +381,24 @@ describe("Invitations and data validation", () => {
     );
     const file = {
       projectId: "p1",
-      name: "Drawing",
-      url: "https://drive.google.com/file/d/example/view",
+      name: "Site photo",
+      kind: "photo",
+      objectKey: "companies/studio/projects/p1/photos/example.webp",
+      sizeBytes: 1000,
+      url: "",
       room: "Kitchen",
       caption: "",
       authorId: "designer",
       clientVisible: true,
       date: "2026-10-11",
     };
-    await assertSucceeds(setDoc(ref(d, "files/good"), file));
+    await assertFails(setDoc(ref(d, "files/good"), file));
+    await assertFails(setDoc(ref(db("owner"), "files/good"), file));
+    await assertFails(setDoc(ref(db("owner"), "photoStorage/current"), {usedBytes:0, quotaBytes:9999999999}));
+    await assertFails(setDoc(ref(d, "photoUploads/invented"), file));
+    await env.withSecurityRulesDisabled(async context => setDoc(ref(context.firestore(), "files/server-photo"), file));
+    await assertSucceeds(getDoc(ref(db("client"), "files/server-photo")));
+    await assertFails(updateDoc(ref(db("client"), "files/server-photo"), {clientVisible:false}));
     await assertFails(
       setDoc(ref(d, "files/bad"), {
         ...file,

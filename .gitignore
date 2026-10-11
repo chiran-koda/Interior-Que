@@ -2,6 +2,13 @@ node_modules/
 dist/
 .sites-runtime/
 .env.local
+.env.*
+!.env.example
+.dev.vars*
+.wrangler/
+worker-build/
+*service-account*.json
+*private-key*.json
 *.zip
 *.log
 .openai/

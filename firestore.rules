@@ -58,9 +58,16 @@ service cloud.firestore {
     allow update: if validApproval(request.resource.data) && visible(company,resource.data) && resource.data.reviewerId == request.auth.uid && resource.data.status == 'Awaiting decision' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','response']) && request.resource.data.status in ['Approved','Changes requested'] && (request.resource.data.status == 'Approved' || request.resource.data.response.size()>0);
    }
    match /files/{file} {
-    function validFile(data){return data.keys().hasOnly(['projectId','name','url','room','caption','authorId','clientVisible','date']) && text(data.projectId,100) && text(data.name,300) && text(data.room,120) && text(data.caption,2000) && text(data.date,10) && data.authorId == request.auth.uid && data.clientVisible is bool && data.url is string && data.url.matches('https://drive[.]google[.]com/.*');}
     allow read: if visible(company,resource.data);
-    allow create: if validFile(request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId);
+    // R2 metadata is written only by the development photo Worker after verified upload.
+    allow write: if false;
+   }
+   match /photoStorage/{usage} {
+    allow read: if staff(company);
+    allow write: if false;
+   }
+   match /photoUploads/{upload} {
+    allow read, write: if false;
    }
    match /materials/{material} {
     function validMaterial(data){return data.keys().hasOnly(['projectId','name','quantity','unit','status','notes']) && text(data.projectId,100) && text(data.name,300) && data.quantity is number && data.quantity>0 && text(data.unit,40) && data.status in ['To order','Ordered','On site'] && text(data.notes,2000);}

@@ -1,66 +1,48 @@
 # Interior Que
 
-Interior project management for an entire firm: owners, designers, site supervisors and clients. A React + TypeScript PWA with Firebase Google authentication, Firestore studio data and private Google Drive file links/uploads.
+Project management for interior firms: owners, designers, supervisors and clients. React + TypeScript PWA on GitHub Pages; Google Sign-In and project metadata use the isolated **Interior Que Development** Firebase project.
 
-Live app: https://chiran-koda.github.io/Interior-Que/
+App: [Interior Que](https://chiran-koda.github.io/Interior-Que/)
 
-## Daily work
+## Project photos
 
-- Owners create studios, projects and a five-step starter checklist; invite people by their Google email, assign projects and tasks, and record receipts/expenses.
-- Designers work from their task list, plan materials, share drawings and request decisions.
-- Supervisors record site progress and blockers, complete tasks and track delivery of materials.
-- Clients see only assigned projects, published site updates/files and shared decisions. They can approve or request changes with review notes.
-- Team updates default to internal. Owners control membership and project access. Invitations are saved in the app; no email is sent automatically.
-- The interactive demo uses separate device storage. Earlier personal tools and records remain accessible from the welcome screen.
+The unfinished Google Drive integration and its earlier personal-workspace entry point have been removed. Google authentication requests no Drive scope. No files need migration.
 
-## Development backend
+Supervisors choose a project and room, select up to 20 photos, and upload. Images are resized to a maximum 2,000 pixel long edge and re-encoded as WebP/JPEG. Each photo shows progress, success or an actionable error with retry. Two uploads run concurrently. Retries reuse stable IDs and compressed bytes.
 
-The default web configuration points only to **interior-que-development**, the new Interior Que Development Firebase project. Firestore is Standard edition in **asia-south1 (Mumbai)**; the project uses the free Spark plan.
+Private Cloudflare R2 objects are organized as `companies/{companyId}/projects/{projectId}/photos/{photoId}.webp` or `.jpg`. A Cloudflare Worker provides signed upload URLs (5 minutes) and signed viewing URLs (60 seconds). These are application-signed Worker URLs backed by the private R2 binding, not public bucket or S3 URLs. No R2 access keys are needed in the browser.
 
-Google sign-in is enabled for this development app. Each firm creates its own studio. Access is enforced by Firestore rules, with verified authentication, active membership, assigned projects and role checks.
+The Worker verifies Firebase ID tokens, active membership and project access on the server. Clients can only view explicitly shared photos, and cannot upload or change quota. Access is rechecked on every image view. Firestore stores metadata, quota counters and temporary reservations; no photo bytes or permanent signed URLs. New companies start at **1,000,000,000 bytes (1 GB)**, configurable by the service default or a server-administered company quota.
 
-All application data is under:
+Exact size, content hash and actual encoded dimensions are verified before storing an upload. Atomic reservations prevent concurrent uploads from exceeding quota. Finalization counts bytes once. Hourly cleanup releases abandoned reservations after 24 hours and removes their orphan objects. R2 is private, with `r2.dev` and public custom domains disabled.
 
-    interiorQueCompanies/{companyId}/
-      members, projects, tasks, materials, updates, approvals, files,
-      expenses, receipts, invites
+**Live R2 storage is awaiting setup. No Cloudflare subscription, bucket, Worker secrets or paid services were activated.** Until the public Worker URL is configured, the app clearly shows that company storage setup is pending. The demo can resize and save photos on the current device for UI verification.
 
-The root company record contains its name and owner ID. Expenses and receipts are owner-only collections. Unrelated namespaces are denied. Client queries include published visibility constraints. Decisions are assigned to one reviewer and cannot be rewritten after review.
+Follow the complete [Cloudflare setup and Firebase billing guide](docs/CLOUDFLARE_SETUP.md). It covers owner approval before R2 checkout, a private bucket, a dedicated development service account, Worker secrets, deployment, GitHub Pages configuration and live acceptance checks.
 
-**DesignQuote production data, authentication, rules and subscriptions were not changed.** Future integration needs a tested rollout of the Interior Que namespace and an explicit cross-origin sign-in handoff. Sharing a Firebase project alone does not automatically sign a browser into a different website. Interior Que subscriptions/entitlements must remain separate from DesignQuote; billing is not implemented in this development release.
+## Company workflows and isolation
 
-Firebase web configuration and OAuth client IDs are public application identifiers, not administrator credentials. Never place service accounts, OAuth client secrets or refresh tokens in this repository or its frontend build.
+Owners create studios and projects with a five-step checklist, invite people by Google email and assign projects. Designers and supervisors manage assigned tasks, materials, updates and approvals. Clients see assigned projects and published updates/photos/decisions. Money and membership management remain owner-only. Invitations are saved in the app; no email is sent automatically.
 
-## Google Drive
+**DesignQuote and its Firebase authentication, data, rules and subscriptions are untouched.** Both the app configuration guard and photo Worker are restricted to `interior-que-development`. Future production integration requires a separate tested release. Shared authentication across websites and subscription billing are not implemented here.
 
-Files are stored in the uploader's Drive, organized into Interior Que/project folders. The app saves their links and captions against the project. Drive access requests use drive.file, and access tokens stay in memory. Uploads are limited to 25 MB and verified against the returned file size. Stable attachment IDs let a retry find a previously completed upload.
+Firestore application records remain in `interiorQueCompanies/{companyId}`. Photo metadata uses `files/{photoId}`, pending records use `photoUploads/{photoId}`, and company usage uses `photoStorage/current`. Private server cleanup jobs use `interiorQuePhotoJobs`; app clients have no access to that namespace. Clients cannot write any photo metadata or counters directly.
 
-A project link does not change the underlying Drive file's sharing permissions. Recipients must also have permission in Google Drive. Files are never made public automatically. Existing HTTPS Drive links can be added without connecting uploads.
+## Development and checks
 
-The development OAuth web client is configured with Drive API enabled and the GitHub Pages/local test origins. Its public client ID is included as the default. Advanced connection settings accept another public client ID when needed. Individual users consent when they connect their own Drive. Shared-workspace uploads require an internet connection; the older personal workspace retains its device upload queue.
+```text
+npm ci
+npm test
+npm run check:worker
+npm run test:rules
+npm run build
+npm run build:worker
+```
 
-## Local development
+Node 22 and Java 21 are used for checks. Rule tests use the `demo-interior-que` local emulator, never a live database. Worker tests use isolated fake database/bucket adapters to exercise real request handlers, concurrent reservation behavior, retries, scope enforcement, signed link expiry and orphan cleanup. JWT tests verify issuer, audience, signature, expiry and verified email.
 
-    npm ci
-    npm run dev
-    npm test
-    npm run test:rules
-    npm run build
+Frontend development: `npm run dev`. Set only the public `VITE_PHOTO_API_URL` in ignored `.env.local` after Worker setup. Server credentials belong only in Cloudflare Worker secrets. Never place service-account JSON, private keys or signing secrets in source, GitHub Pages or a `VITE_` variable.
 
-Use Node 22 and Java 21 for Firestore emulator tests. The emulator uses demo-interior-que; tests do not access live Firebase data. The GitHub Pages workflow runs application tests, database access tests and a production build before publishing.
+GitHub Pages CI tests the app, Worker types and Firestore rules before publication. Set the repository **variable** `VITE_PHOTO_API_URL` to the HTTPS Worker URL and manually rerun the publication workflow after setup. Local builds default to `/`; Pages uses `/Interior-Que/`, including the PWA manifest and service worker.
 
-This release is locked to the registered Interior Que Development web configuration. The configuration guard rejects different project IDs, API keys, authentication domains and app IDs before starting authentication. A production integration requires a separately tested code release.
-
-To deploy development rules and indexes after tests:
-
-    npx firebase deploy --only firestore --project interior-que-development
-
-The frontend build uses VITE_BASE_PATH=/Interior-Que/ on GitHub Pages. Its manifest and service worker use the same scope. The app offers an update prompt when a new version is available.
-
-## Verification
-
-Application tests cover existing calculations, validation, Drive requests and new role-scoped data/progress behavior. Firestore emulator tests cover signed-out and unverified denial, isolated companies, paused access, owner creation, atomic project checklists, project-scoped staff, client visibility, reviewer-only decisions, assigned staff validation, invitation acceptance and rejected privilege escalation.
-
-Browser checks cover responsive navigation, project creation, task completion/progress, persisted demo changes, internal site updates and client review validation. Live Google sign-in, studio creation, project/checklist creation, task completion/progress, deadline editing and material delivery were verified against the separate development backend. Per-user Google Drive authorization was also verified.
-
-The source repository is public. Studio records and Drive files are stored in their respective services, not committed to GitHub. Demo data is fictional.
+No Firebase Storage, Cloud Functions or Blaze upgrade is required. Firestore metadata and authorization operations consume the project's existing free quotas. R2's included usage is account-wide and metered beyond the allowance; a 1 GB company quota does not guarantee zero account cost. See the setup guide for current official billing sources and the required approval boundary.

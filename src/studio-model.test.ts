@@ -47,8 +47,9 @@ describe("role workspaces", () => {
     expect(isOverdue(tasks[0], "2026-11-01")).toBe(false);
     expect(isOverdue(tasks[1], "2026-11-01")).toBe(true);
   });
-  it("allows only private Drive destinations and local demo references", () => {
-    expect(safeFileUrl("https://drive.google.com/file/d/id/view")).toBe(true);
+  it("allows only bundled demo references, never permanent external photo URLs", () => {
+    expect(safeFileUrl("/images/living.jpg")).toBe(true);
+    expect(safeFileUrl("https://drive.google.com/file/d/id/view")).toBe(false);
     for (const url of [
       "javascript:alert(1)",
       "https://drive.google.com.evil.example/file",

@@ -1,4 +1,4 @@
-import { seed, today, uid, type Project } from "./model";
+import { seed, today, uid } from "./model";
 
 export type StudioRole = "owner" | "designer" | "supervisor" | "client";
 export const roleNames: Record<StudioRole, string> = {
@@ -70,6 +70,12 @@ export interface StudioFile {
   authorId: string;
   clientVisible: boolean;
   date: string;
+  kind?: "photo";
+  objectKey?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  mime?: string;
 }
 export interface StudioPayment {
   id: string;
@@ -310,33 +316,6 @@ export function projectStarter(
     status: "To do",
   }));
 }
-export function driveProject(p: StudioProject): Project {
-  return {
-    id: p.id,
-    name: p.name,
-    clientId: "",
-    type: "Interior",
-    location: p.location,
-    value: 0,
-    start: p.start,
-    end: p.end,
-    status: "In progress",
-    progress: p.progress,
-    image: p.image,
-    description: p.brief,
-  };
-}
 export function safeFileUrl(url: string) {
-  if (/^\/images\/[\w.-]+$/.test(url)) return true;
-  try {
-    const parsed = new URL(url);
-    return (
-      parsed.protocol === "https:" &&
-      parsed.hostname === "drive.google.com" &&
-      !parsed.username &&
-      !parsed.password
-    );
-  } catch {
-    return false;
-  }
+  return /^\/images\/[\w.-]+$/.test(url);
 }

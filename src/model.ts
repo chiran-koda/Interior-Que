@@ -8,7 +8,7 @@ export interface Material {id:string; name:string; category:string; brand:string
 export interface Purchase {id:string; projectId:string; supplier:string; item:string; qty:number; rate:number; date:string; status:string;}
 export interface Member {id:string; name:string; role:string; email:string; location:string; color:string;}
 export interface EstimateItem {id:string; projectId:string; room:string; name:string; specification:string; qty:number; rate:number; unit:string;}
-export interface Attachment {id:string; projectId:string; name:string; mime:string; size:number; date:string; room:string; caption:string; status:'Queued'|'Synced'|'Sample'; driveId?:string; driveUrl?:string; image?:string; accountId:string;}
+export interface Attachment {id:string; projectId:string; name:string; mime:string; size:number; date:string; room:string; caption:string; status:'Queued'|'Synced'|'Sample'; image?:string; accountId:string;}
 export interface Activity {id:string; text:string; date:string; projectId?:string;}
 export interface Workspace {version:1; projects:Project[]; clients:Client[]; transactions:Transaction[]; tasks:Task[]; materials:Material[]; purchases:Purchase[]; members:Member[]; estimates:EstimateItem[]; attachments:Attachment[]; activity:Activity[]; settings:{studio:string; name:string; gst:number; notifications:boolean;};}
 export const uid=()=>crypto.randomUUID();

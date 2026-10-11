@@ -17,7 +17,7 @@ export function validateWorkspace(data:unknown):Workspace{
  purchases:r=>fields(r,['id','projectId','supplier','item','status'])&&number(r.qty)&&r.qty>0&&number(r.rate)&&date(r.date),
  members:r=>fields(r,['id','name','role','email','location','color'])&&/^#[\da-f]{6}$/i.test(r.color),
  estimates:r=>fields(r,['id','projectId','room','name','specification','unit'])&&number(r.qty)&&r.qty>0&&number(r.rate),
- attachments:r=>fields(r,['id','projectId','name','mime','room','caption','accountId'])&&number(r.size)&&date(r.date)&&['Queued','Synced','Sample'].includes(r.status)&&(!r.image||typeof r.image==='string'&&/^\/(?!\/)/.test(r.image))&&(!r.driveId||typeof r.driveId==='string'&&/^[\w-]+$/.test(r.driveId))&&(!r.driveUrl||typeof r.driveUrl==='string'&&/^https:\/\/drive\.google\.com\//.test(r.driveUrl)),
+ attachments:r=>fields(r,['id','projectId','name','mime','room','caption','accountId'])&&number(r.size)&&date(r.date)&&['Queued','Synced','Sample'].includes(r.status)&&(!r.image||typeof r.image==='string'&&/^\/(?!\/)/.test(r.image)),
  activity:r=>fields(r,['id','text','date'])&&!Number.isNaN(Date.parse(r.date))
  };
  for(const key of collections){if(!w[key].every(validators[key]))throw new Error(`The ${key} records in this backup are invalid.`);if(new Set(w[key].map((r:any)=>r.id)).size!==w[key].length)throw new Error(`Duplicate ${key} records found in this backup.`);}

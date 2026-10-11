@@ -29,9 +29,9 @@ import {
   Check,
   Send,
   Copy,
-  ExternalLink,
   Paintbrush,
   Building2,
+  Camera,
 } from "lucide-react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
@@ -47,19 +47,16 @@ import {
 import { Brand } from "./Brand";
 import { loadDemoStudio, saveDemoStudio } from "./studio-store";
 import * as cloud from "./studio-cloud";
-import * as drive from "./drive";
+import { PhotoCard, PhotoUploader, StorageMeter } from "./ProjectPhotos";
 import { asset } from "./assets";
-import { developmentDriveClientId } from "./firebase-development";
 import { uid, today, dateLabel, money } from "./model";
 import {
   canAccessProject,
-  driveProject,
   isOverdue,
   lifecycle,
   newStudio,
   projectStarter,
   roleNames,
-  safeFileUrl,
   scopedStudio,
   taskProgress,
   type Approval,
@@ -76,7 +73,7 @@ type StudioPage =
   | "Approvals"
   | "Site updates"
   | "Materials"
-  | "Files"
+  | "Photos"
   | "Money"
   | "Team"
   | "Settings";
@@ -107,7 +104,7 @@ const pageIcons = {
   Approvals: CheckCircle2,
   "Site updates": HardHat,
   Materials: Package,
-  Files: FolderOpen,
+  Photos: FolderOpen,
   Money: Wallet,
   Team: Users,
   Settings,
@@ -135,20 +132,19 @@ export function StudioWorkspace({
   demoRole = "owner",
   changeDemoRole,
   onLeave,
-  onPersonal,
   cloudData,
   cloudMember,
 }: {
   demoRole?: StudioRole;
   changeDemoRole?: (role: StudioRole) => void;
   onLeave: () => void;
-  onPersonal: () => void;
   cloudData?: StudioData;
   cloudMember?: StudioMember;
 }) {
   const demo = !cloudData;
   const [local, setLocal] = useState<StudioData | null>(null);
   const localRef = useRef(local);
+  const persistQueue = useRef(Promise.resolve());
   localRef.current = local;
   const [page, setPage] = useState<StudioPage>("Today");
   const [projectId, setProjectId] = useState("");
@@ -164,14 +160,7 @@ export function StudioWorkspace({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
-  const [driveAccount, setDriveAccount] = useState<drive.DriveAccount | null>(
-    null,
-  );
-  const [clientId, setClientId] = useState(
-    localStorage.getItem("iq-development-drive-client-id") ||
-      import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-      developmentDriveClientId,
-  );
+  const [photoRefresh, setPhotoRefresh] = useState(0);
   const {
     needRefresh: [needsUpdate],
     updateServiceWorker,
@@ -275,12 +264,16 @@ export function StudioWorkspace({
     [demo],
   );
   const persist = async (fn: (s: StudioData) => StudioData) => {
-    const current = localRef.current;
-    if (!current) throw new Error("The demo is still opening.");
-    const next = fn(current);
-    await saveDemoStudio(next);
-    localRef.current = next;
-    setLocal(next);
+    const saving = persistQueue.current.then(async () => {
+      const current = localRef.current;
+      if (!current) throw new Error("The demo is still opening.");
+      const next = fn(current);
+      await saveDemoStudio(next);
+      localRef.current = next;
+      setLocal(next);
+    });
+    persistQueue.current = saving.catch(() => {});
+    await saving;
   };
   const save = async (key: CollectionKey, record: any) => {
     if (demo)
@@ -363,7 +356,7 @@ export function StudioWorkspace({
     .filter((u) => u.blocker)
     .sort((a, b) => b.date.localeCompare(a.date));
   const pages: StudioPage[] = client
-    ? ["Today", "Projects", "Approvals", "Site updates", "Files", "Settings"]
+    ? ["Today", "Projects", "Approvals", "Site updates", "Photos", "Settings"]
     : [
         "Today",
         "Projects",
@@ -371,7 +364,7 @@ export function StudioWorkspace({
         "Approvals",
         "Site updates",
         "Materials",
-        "Files",
+        "Photos",
         ...(owner ? (["Money", "Team"] as StudioPage[]) : []),
         "Settings",
       ];
@@ -504,41 +497,27 @@ export function StudioWorkspace({
         </article>
       ));
   const fileCards = projectRecords(data.files)
-    .filter((f) => matches(`${f.name} ${f.room} ${f.caption}`))
-    .map((file) => (
-      <article className="studio-file" key={file.id}>
-        {file.url.startsWith("/images/") ? (
-          <img src={asset(file.url)} alt={file.caption} />
-        ) : (
-          <FolderOpen size={34} />
-        )}
-        <div>
-          <h3>{file.name}</h3>
-          <p>
-            {projectName(file.projectId)} · {file.room}
-          </p>
-          <small>{file.caption}</small>
-          <Badge>
-            {file.clientVisible ? "Shared with client" : "Team only"}
-          </Badge>
-          {safeFileUrl(file.url) && (
-            <a
-              className="btn secondary"
-              href={asset(file.url)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {file.url.startsWith("/")
-                ? "Open reference"
-                : "Open in Google Drive"}
-              <ExternalLink size={14} />
-            </a>
-          )}
-        </div>
-      </article>
+    .filter((f) => matches([f.name, f.room, f.caption].join(" ")))
+    .map((photo) => (
+      <PhotoCard
+        key={photo.id}
+        photo={photo}
+        company={data.id}
+        project={projectName(photo.projectId)}
+        demo={demo}
+      />
     ));
   const actions = (
     <div className="studio-quick-actions">
+      {!client && (
+        <Button
+          variant={member.role === "supervisor" ? "primary" : "secondary"}
+          onClick={() => open("file")}
+        >
+          <Camera size={17} />
+          Upload photos
+        </Button>
+      )}
       {owner && (
         <Button variant="primary" onClick={() => open("project")}>
           <Plus size={17} />
@@ -583,7 +562,7 @@ export function StudioWorkspace({
         Approvals: { label: "Request approval", kind: "approval" },
         "Site updates": { label: "Post site update", kind: "update" },
         Materials: { label: "Add material", kind: "material" },
-        Files: { label: "Add project file", kind: "file" },
+        Photos: { label: "Upload photos", kind: "file" },
         Money: { label: "Record transaction", kind: "payment" },
         Team: { label: "Invite someone", kind: "invite" },
       }
@@ -594,7 +573,7 @@ export function StudioWorkspace({
           Approvals: { label: "Request approval", kind: "approval" },
           "Site updates": { label: "Post site update", kind: "update" },
           Materials: { label: "Add material", kind: "material" },
-          Files: { label: "Add project file", kind: "file" },
+          Photos: { label: "Upload photos", kind: "file" },
         };
   if ((!demo && !cloudData) || (demo && !local))
     return (
@@ -676,7 +655,6 @@ export function StudioWorkspace({
           </div>
           <button
             onClick={() => {
-              drive.disconnectDrive();
               onLeave();
             }}
           >
@@ -728,7 +706,6 @@ export function StudioWorkspace({
               on this device.
               <button
                 onClick={() => {
-                  drive.disconnectDrive();
                   onLeave();
                 }}
               >
@@ -846,12 +823,12 @@ export function StudioWorkspace({
                     target: client ? "Site updates" : "Tasks",
                   },
                   {
-                    label: client ? "Shared files" : "Awaiting approval",
+                    label: client ? "Shared photos" : "Awaiting approval",
                     value: client ? data.files.length : waiting.length,
                     text: client
                       ? "View designs and documents"
                       : "See what needs a decision",
-                    target: client ? "Files" : "Approvals",
+                    target: client ? "Photos" : "Approvals",
                   },
                 ].map((s) => (
                   <button
@@ -1112,11 +1089,11 @@ export function StudioWorkspace({
                 </div>
                 <section className="studio-panel">
                   <div className="studio-section-heading">
-                    <h2>Project files</h2>
+                    <h2>Project photos</h2>
                     <button
-                      onClick={() => navigate("Files", currentProject.id)}
+                      onClick={() => navigate("Photos", currentProject.id)}
                     >
-                      View all files
+                      View all photos
                       <ArrowRight size={16} />
                     </button>
                   </div>
@@ -1266,18 +1243,26 @@ export function StudioWorkspace({
               )}
             </section>
           )}
-          {page === "Files" && (
+          {page === "Photos" && (
             <>
               <div className="studio-info">
                 <Cloud size={18} />
-                Files stay in the uploader’s Google Drive. Your team chooses
-                whether to share each project link with the client.
+                Choose photos, upload, and follow the progress. Photos are
+                private unless shared with the client.
               </div>
+              {!client && (
+                <StorageMeter
+                  company={data.id}
+                  demo={demo}
+                  photos={data.files}
+                  refresh={photoRefresh}
+                />
+              )}
               <div className="studio-file-grid">{fileCards}</div>
               {!data.files.length && (
                 <Empty
-                  title="A place for the project’s files"
-                  text="Add drawings, design references and site photos to the project."
+                  title="A place for your project photos"
+                  text="Upload site photos and design references to the project."
                 />
               )}
             </>
@@ -1433,61 +1418,21 @@ export function StudioWorkspace({
                     available only in the demo.
                   </p>
                 )}
-                <h3>Personal tools</h3>
-                <p>
-                  Your earlier estimates, inventory and local records are still
-                  available in the personal workspace.
-                </p>
-                <Button onClick={onPersonal}>
-                  Open personal tools
-                  <ArrowRight size={16} />
-                </Button>
               </section>
               <section className="studio-panel">
-                <h2>Google Drive connection</h2>
+                <h2>Project photo storage</h2>
                 <p>
-                  Connect the account where you want to store uploads. Project
-                  links are shared in this workspace; Drive file permissions
-                  remain under the uploader’s control.
+                  Upload from a phone or computer. Photos stay private to the
+                  project team unless you share them with the client.
                 </p>
-                <details className="drive-admin-settings">
-                  <summary>Advanced connection settings</summary>
-                  <Field
-                    label="Google Drive app client ID"
-                    name="driveClientId"
-                    value={clientId}
+                {!client && (
+                  <StorageMeter
+                    company={data.id}
+                    demo={demo}
+                    photos={data.files}
+                    refresh={photoRefresh}
                   />
-                  <Button
-                    onClick={() => {
-                      const input = document.querySelector<HTMLInputElement>(
-                        '[name="driveClientId"]',
-                      );
-                      const value = input?.value.trim() || "";
-                      setClientId(value);
-                      localStorage.setItem(
-                        "iq-development-drive-client-id",
-                        value,
-                      );
-                      setMessage("Drive client ID saved.");
-                    }}
-                  >
-                    Save Drive connection
-                  </Button>
-                </details>
-                <Button
-                  disabled={busy || !clientId}
-                  onClick={() =>
-                    run(async () => {
-                      const account = await drive.connectDrive(clientId);
-                      setDriveAccount(account);
-                    }, "Google Drive connected.")
-                  }
-                >
-                  {driveAccount
-                    ? "Reconnect Google Drive"
-                    : "Connect Google Drive"}
-                </Button>
-                {driveAccount && <p>{driveAccount.email}</p>}
+                )}
                 <div className="studio-info">
                   Interior Que is in development. DesignQuote production
                   accounts, records and subscriptions are not changed by this
@@ -1527,7 +1472,19 @@ export function StudioWorkspace({
           </button>
         </nav>
       </div>
-      {dialog && (
+      {dialog?.kind === "file" && !client && (
+        <PhotoUploader
+          company={data.id}
+          projects={data.projects}
+          initialProject={projectId}
+          authorId={member.id}
+          demo={demo}
+          onDemoSave={(photo) => save("files", photo)}
+          onClose={() => setDialog(null)}
+          onUploaded={() => setPhotoRefresh((n) => n + 1)}
+        />
+      )}
+      {dialog && dialog.kind !== "file" && (
         <StudioDialog
           kind={dialog.kind}
           record={dialog.record}
@@ -1536,12 +1493,8 @@ export function StudioWorkspace({
           projectId={projectId}
           busy={busy}
           workspaceError={error}
-          driveEmail={driveAccount && drive.connected() ? driveAccount.email : ""}
-          onConnectDrive={() => run(async () => {
-            setDriveAccount(await drive.connectDrive(clientId));
-          }, "Google Drive connected. You can now choose a file.")}
           onClose={() => setDialog(null)}
-          onSubmit={async (fd, files) => {
+          onSubmit={async (fd) => {
             const f = (key: string) => String(fd.get(key) || "").trim(),
               id = dialog.record?.id || uid(),
               project = f("projectId");
@@ -1709,59 +1662,6 @@ export function StudioWorkspace({
                   };
                   await save(kind === "invite" ? "invites" : "members", record);
                 }
-                if (kind === "file") {
-                  let url = f("url"),
-                    name = f("name");
-                  if (files.length) {
-                    if (files.length > 1)
-                      throw new Error(
-                        "Upload one file at a time so every file has a clear caption.",
-                      );
-                    const file = files[0];
-                    if (file.size > 25 * 1024 * 1024)
-                      throw new Error("Maximum file size is 25 MB.");
-                    if (!driveAccount || !drive.connected())
-                      throw new Error(
-                        "Connect Google Drive in Settings first, or add an existing Drive file link.",
-                      );
-                    const p = data.projects.find((p) => p.id === project)!;
-                    const uploaded = await drive.uploadAttachment(
-                      driveProject(p),
-                      {
-                        id,
-                        projectId: project,
-                        name: file.name,
-                        mime: file.type,
-                        size: file.size,
-                        date: today(),
-                        room: f("room"),
-                        caption: f("caption"),
-                        status: "Queued",
-                        accountId: driveAccount.id,
-                      },
-                      file,
-                    );
-                    url =
-                      uploaded.webViewLink ||
-                      `https://drive.google.com/file/d/${uploaded.id}/view`;
-                    name = file.name;
-                  }
-                  if (!safeFileUrl(url) || url.startsWith("/"))
-                    throw new Error(
-                      "Choose a valid HTTPS Google Drive file link.",
-                    );
-                  await save("files", {
-                    id,
-                    projectId: project,
-                    name: name || "Project file",
-                    url,
-                    room: f("room"),
-                    caption: f("caption"),
-                    authorId: member.id,
-                    clientVisible: fd.has("clientVisible"),
-                    date: today(),
-                  });
-                }
               },
               dialog.kind === "invite"
                 ? "Invitation saved. Copy the join link from Team and share it with this person."
@@ -1874,8 +1774,6 @@ function StudioDialog({
   projectId,
   busy,
   workspaceError,
-  driveEmail,
-  onConnectDrive,
   onClose,
   onSubmit,
 }: {
@@ -1886,22 +1784,19 @@ function StudioDialog({
   projectId: string;
   busy: boolean;
   workspaceError: string;
-  driveEmail: string;
-  onConnectDrive: () => Promise<boolean>;
   onClose: () => void;
-  onSubmit: (fd: FormData, files: File[]) => Promise<boolean>;
+  onSubmit: (fd: FormData) => Promise<boolean>;
 }) {
   const [selected, setSelected] = useState(
     record?.projectId || projectId || data.projects[0]?.id || "",
   );
-  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const titles: Record<DialogKind, string> = {
     project: record ? "Edit project" : "Start a project",
     task: record ? "Edit task" : "Add a clear next task",
     update: "A quick update from the site",
     approval: "Request a decision",
-    file: "Add a project file",
+    file: "Upload project photos",
     payment: "Record a transaction",
     invite: "Invite someone to your studio",
     member: "Manage project access",
@@ -1911,7 +1806,7 @@ function StudioDialog({
     e.preventDefault();
     setError("");
     try {
-      const ok = await onSubmit(new FormData(e.currentTarget), files);
+      const ok = await onSubmit(new FormData(e.currentTarget));
       if (!ok)
         setError(
           "The change was not saved. Check the workspace message and try again.",
@@ -2090,7 +1985,7 @@ function StudioDialog({
               />
               <ShareWithClient />
               <p className="form-hint">
-                Add progress photos from Files after posting the update.
+                Add progress photos from Photos after posting the update.
               </p>
             </>
           )}
@@ -2161,60 +2056,9 @@ function StudioDialog({
               </div>
               <ShareWithClient />
               <p className="form-hint">
-                Add the drawing or reference to this project’s Files. The
+                Add the drawing or reference to this project’s Photos. The
                 reviewer can find it beside the decision.
               </p>
-            </>
-          )}
-          {kind === "file" && (
-            <>
-              <Field
-                label="File title"
-                name="name"
-                placeholder="e.g. Kitchen drawing revision 2"
-              />
-              <Field
-                label="Existing Google Drive file link"
-                name="url"
-                type="url"
-                placeholder="https://drive.google.com/…"
-              />
-              <div className="field">
-                <label htmlFor="studio-file-upload">
-                  Or upload a file to your Google Drive
-                </label>
-                {!driveEmail && (
-                  <Button onClick={onConnectDrive}>
-                    <Cloud size={17} />Connect your Google Drive
-                  </Button>
-                )}
-                {driveEmail && <small>Uploads save to {driveEmail}</small>}
-                <input
-                  id="studio-file-upload"
-                  type="file"
-                  disabled={!driveEmail}
-                  accept="image/jpeg,image/png,image/webp,.pdf,.dwg,.xlsx,.csv"
-                  onChange={(e) => setFiles([...(e.target.files || [])])}
-                />
-                {files[0] && (
-                  <small>
-                    {files[0].name} · {(files[0].size / 1024).toFixed(0)} KB
-                  </small>
-                )}
-              </div>
-              <div className="form-grid">
-                <Field label="Room / area" name="room" required />
-                <Field
-                  label="Caption"
-                  name="caption"
-                  placeholder="What is the team looking at?"
-                />
-              </div>
-              <ShareWithClient />
-              <div className="studio-info">
-                Recipients also need permission in Google Drive to open the
-                file. Adding a project link does not make the Drive file public.
-              </div>
             </>
           )}
           {kind === "payment" && (
@@ -2313,7 +2157,7 @@ function StudioDialog({
               )}
               <div className="studio-info">
                 Clients see only their assigned projects, published updates,
-                shared file links and decisions. Internal tasks, materials and
+                shared photos and decisions. Internal tasks, materials and
                 expenses stay with the team.
               </div>
             </>

@@ -10,6 +10,6 @@ describe('linked financial records',()=>{
 describe('workspace recovery',()=>{
  it('accepts a complete exported workspace',()=>expect(validateWorkspace(JSON.parse(JSON.stringify(seed()))).projects.length).toBe(8));
  it('rejects broken project links',()=>{const w=seed();w.transactions[0].projectId='missing';expect(()=>validateWorkspace(w)).toThrow(/links/);});
- it('rejects unsafe media and Drive URLs',()=>{const w=seed();w.attachments[0].driveUrl='https://attacker.example/token';expect(()=>validateWorkspace(w)).toThrow(/attachments/);});
+ it('rejects unsafe media URLs',()=>{const w=seed();w.attachments[0].image='https://attacker.example/token';expect(()=>validateWorkspace(w)).toThrow(/attachments/);});
  it('rejects invalid numeric records and malformed collections',()=>{const w=seed();w.tasks[0].progress=101;expect(()=>validateWorkspace(w)).toThrow(/tasks/);expect(()=>validateWorkspace({version:1,projects:[]})).toThrow();});
 });

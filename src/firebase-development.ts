@@ -7,6 +7,3 @@ export const developmentConfig = {
   messagingSenderId: "74032318220",
   appId: "1:74032318220:web:70c889f3c8ef0056a36b29",
 };
-
-export const developmentDriveClientId =
-  "74032318220-ffcd4lglpa61n163k3nbgerkujjlg14b.apps.googleusercontent.com";

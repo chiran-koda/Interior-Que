@@ -1,0 +1,17 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "interior-que-photos-dev",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-11",
+  "workers_dev": true,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "interior-que-development",
+    "ALLOWED_ORIGINS": "https://chiran-koda.github.io,http://127.0.0.1:5174,http://127.0.0.1:5173",
+    "DEFAULT_COMPANY_QUOTA_BYTES": "1000000000",
+  },
+  "r2_buckets": [
+    { "binding": "PHOTOS", "bucket_name": "interior-que-photos-dev" },
+  ],
+  "triggers": { "crons": ["17 * * * *"] },
+  "observability": { "enabled": false },
+}

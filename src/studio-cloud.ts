@@ -1,4 +1,9 @@
-import { initializeApp, getApp, getApps, type FirebaseOptions } from "firebase/app";
+import {
+  initializeApp,
+  getApp,
+  getApps,
+  type FirebaseOptions,
+} from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -58,9 +63,16 @@ export function parseCloudConfig(raw: string): CloudConfig {
     throw new Error(
       "The Firebase project ID or authentication domain is invalid.",
     );
-  if (["apiKey", "authDomain", "projectId", "appId"].some(
-    key => config[key] !== developmentConfig[key as keyof typeof developmentConfig],
-  )) throw new Error("This development release connects only to Interior Que Development. Production connections require a separately tested release.");
+  if (
+    ["apiKey", "authDomain", "projectId", "appId"].some(
+      (key) =>
+        config[key] !==
+        developmentConfig[key as keyof typeof developmentConfig],
+    )
+  )
+    throw new Error(
+      "This development release connects only to Interior Que Development. Production connections require a separately tested release.",
+    );
   return {
     apiKey: config.apiKey,
     authDomain: config.authDomain,
@@ -82,7 +94,7 @@ export function savedCloudConfig() {
 }
 let db: Firestore;
 // Keep the local preview working when this module is refreshed during development.
-if (getApps().some(app => app.name === "interior-que-company"))
+if (getApps().some((app) => app.name === "interior-que-company"))
   db = getFirestore(getApp("interior-que-company"));
 export function startCloud(config: CloudConfig) {
   const app = initializeApp(config, "interior-que-company");
@@ -94,6 +106,8 @@ export type { User };
 export const login = (auth: ReturnType<typeof getAuth>) =>
   signInWithPopup(auth, new GoogleAuthProvider());
 export const cloudDb = () => db;
+export const currentUser = () =>
+  getAuth(getApp("interior-que-company")).currentUser;
 const base = (id: string) => `interiorQueCompanies/${id}`;
 export async function createStudio(user: User, name: string) {
   if (!user.emailVerified)

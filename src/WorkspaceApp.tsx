@@ -1,5 +1,5 @@
 import { Brand } from "./Brand";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -7,7 +7,6 @@ import {
   Paintbrush,
   Building2,
   HeartHandshake,
-  ArrowLeft,
   Cloud,
   LogOut,
 } from "lucide-react";
@@ -21,11 +20,8 @@ import {
   type StudioRole,
 } from "./studio-model";
 import { asset } from "./assets";
-const PersonalApp = lazy(() => import("./App"));
 export default function WorkspaceApp() {
-  const [mode, setMode] = useState<"welcome" | "demo" | "cloud" | "personal">(
-    "welcome",
-  );
+  const [mode, setMode] = useState<"welcome" | "demo" | "cloud">("welcome");
   const [role, setRole] = useState<StudioRole>("owner");
   const [config] = useState(cloud.savedCloudConfig);
   const [auth] = useState(() => (config ? cloud.startCloud(config) : null));
@@ -119,38 +115,17 @@ export default function WorkspaceApp() {
     localStorage.setItem("iq-company-id", id);
     setError("");
   };
-  if (mode === "personal")
-    return (
-      <>
-        <div className="personal-mode-bar">
-          <button onClick={() => setMode("welcome")}>
-            <ArrowLeft size={16} />
-            Team workspace
-          </button>
-          <span>Personal tools · saved on this device</span>
-        </div>
-        <Suspense fallback={<Busy />}>
-          <PersonalApp />
-        </Suspense>
-      </>
-    );
   if (mode === "demo")
     return (
       <StudioWorkspace
         demoRole={role}
         changeDemoRole={setRole}
         onLeave={() => setMode("welcome")}
-        onPersonal={() => setMode("personal")}
       />
     );
   if (mode === "cloud" && user && member && member.active !== false && data)
     return (
-      <StudioWorkspace
-        cloudData={data}
-        cloudMember={member}
-        onLeave={leave}
-        onPersonal={() => setMode("personal")}
-      />
+      <StudioWorkspace cloudData={data} cloudMember={member} onLeave={leave} />
     );
   if (mode === "cloud" && user)
     return (
@@ -253,9 +228,6 @@ export default function WorkspaceApp() {
       <header>
         <Brand />
         <div className="gate-links">
-          <button onClick={() => setMode("personal")}>
-            Open personal tools
-          </button>
           <Button
             variant="primary"
             disabled={!auth || !authReady || busy}
