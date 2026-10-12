@@ -7,7 +7,95 @@ export function Button({children,onClick,variant='secondary',type='button',disab
 export function Panel({title,subtitle,action,children,className=''}:{title:string;subtitle?:string;action?:ReactNode;children:ReactNode;className?:string}){return <section className={`panel ${className}`}><div className="panel-heading"><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>{children}</section>;}
 export function Progress({value}:{value:number}){return <span className="progress-wrap"><span className="progress"><span style={{width:`${value}%`}}/></span><span>{value}%</span></span>;}
 export function Empty({title='Nothing here yet',text='Add your first record to get started.',action}:{title?:string;text?:string;action?:ReactNode}){return <div className="empty"><span className="empty-symbol">✦</span><h3>{title}</h3><p>{text}</p>{action}</div>;}
-export function Modal({title,subtitle,children,onClose,wide=false}:{title:string;subtitle?:string;children:ReactNode;onClose:()=>void;wide?:boolean}){const ref=useRef<HTMLDivElement>(null);useEffect(()=>{const prev=document.activeElement as HTMLElement;const overflow=document.body.style.overflow;document.body.style.overflow='hidden';ref.current?.querySelector<HTMLElement>('button,input,select,textarea')?.focus();const handler=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();if(e.key==='Tab'){const nodes=ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select,textarea,[tabindex="0"]');if(!nodes?.length)return;const first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};document.addEventListener('keydown',handler);return()=>{document.body.style.overflow=overflow;document.removeEventListener('keydown',handler);prev?.focus();};},[onClose]);return <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)onClose();}}><div ref={ref} role="dialog" aria-modal="true" aria-label={title} className={`modal ${wide?'wide':''}`}><header><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div><button className="icon-btn" onClick={onClose} aria-label="Close dialog"><X size={20}/></button></header>{children}</div></div>;}
+export function Modal({
+  title,
+  subtitle,
+  children,
+  onClose,
+  wide = false,
+  className = "",
+  initialFocus,
+  closeDisabled = false,
+}: {
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+  onClose: () => void;
+  wide?: boolean;
+  className?: string;
+  initialFocus?: string;
+  closeDisabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    ref.current
+      ?.querySelector<HTMLElement>(
+        initialFocus || "button,input,select,textarea",
+      )
+      ?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeRef.current();
+      if (e.key === "Tab") {
+        const nodes = Array.from(ref.current?.querySelectorAll<HTMLElement>(
+          'button,a[href],input,select,textarea,summary,[tabindex="0"]',
+        ) || []).filter(node => !node.matches(':disabled') && node.getClientRects().length > 0);
+        if (!nodes?.length) return;
+        const first = nodes[0],
+          last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.body.style.overflow = overflow;
+      document.removeEventListener("keydown", handler);
+      prev?.focus();
+    };
+  }, [initialFocus]);
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`modal ${wide ? "wide" : ""} ${className}`}
+      >
+        <header>
+          <div>
+            <h2>{title}</h2>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          <button
+            className="icon-btn"
+            onClick={onClose}
+            disabled={closeDisabled}
+            aria-label="Close dialog"
+          >
+            <X size={20} />
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
 export function Field({label,name,value,type='text',required=false,children,min,step,placeholder}:{label:string;name:string;value?:string|number;type?:string;required?:boolean;children?:ReactNode;min?:number;step?:string;placeholder?:string}){return <label className="field"><span>{label}{required&&<i> *</i>}</span>{children?<select name={name} defaultValue={value} required={required}>{children}</select>:type==='textarea'?<textarea name={name} defaultValue={value} required={required} rows={3} placeholder={placeholder}/>:<input name={name} type={type} defaultValue={value} required={required} min={min} step={step} placeholder={placeholder}/>}</label>;}
 export function Stat({label,value,detail,icon,onClick,tone=''}:{label:string;value:string;detail:ReactNode;icon:ReactNode;onClick?:()=>void;tone?:string}){return <button className={`stat ${tone}`} onClick={onClick}><div className="stat-top"><span>{label}</span><span className="stat-icon">{icon}</span></div><strong>{value}</strong><div className="stat-bottom">{detail}<ArrowUpRight size={16}/></div></button>;}
 export function SearchBox({value,onChange,placeholder='Search…'}:{value:string;onChange:(s:string)=>void;placeholder?:string}){return <label className="search-box"><Search size={16}/><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder}/></label>;}

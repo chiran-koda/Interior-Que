@@ -47,6 +47,7 @@ import {
   Progress,
 } from "./components";
 import { Brand } from "./Brand";
+import { ProjectDialog } from "./ProjectDialog";
 import { loadDemoStudio, saveDemoStudio } from "./studio-store";
 import * as cloud from "./studio-cloud";
 import { PhotoCard, PhotoUploader, StorageMeter } from "./ProjectPhotos";
@@ -1769,6 +1770,16 @@ function StudioDialog({
     record?.projectId || projectId || data.projects[0]?.id || "",
   );
   const [error, setError] = useState("");
+  if (kind === "project")
+    return (
+      <ProjectDialog
+        record={record}
+        busy={busy}
+        workspaceError={workspaceError}
+        onClose={onClose}
+        onSubmit={onSubmit}
+      />
+    );
   const titles: Record<DialogKind, string> = {
     project: record ? "Edit project" : "Start a project",
     task: record ? "Edit task" : "Add a clear next task",
@@ -1821,68 +1832,6 @@ function StudioDialog({
                 ))}
               </select>
             </label>
-          )}
-          {kind === "project" && (
-            <>
-              <Field
-                label="Project name"
-                name="name"
-                value={record?.name}
-                required
-                placeholder="e.g. Meera’s 3BHK home"
-              />
-              <div className="form-grid">
-                <Field
-                  label="Client name"
-                  name="clientName"
-                  value={record?.clientName}
-                  required
-                />
-                <Field
-                  label="Site location"
-                  name="location"
-                  value={record?.location}
-                  required
-                />
-                <Field
-                  label="Start date"
-                  name="start"
-                  type="date"
-                  value={record?.start || today()}
-                  required
-                />
-                <Field
-                  label="Handover target"
-                  name="end"
-                  type="date"
-                  value={record?.end || today()}
-                  required
-                />
-              </div>
-              <Field
-                label="Project status"
-                name="status"
-                value={record?.status || "Planning"}
-              >
-                <option>Planning</option>
-                <option>In progress</option>
-                <option>Delayed</option>
-                <option>Completed</option>
-              </Field>
-              <Field
-                label="Project brief"
-                name="brief"
-                type="textarea"
-                value={record?.brief}
-                placeholder="What are we creating?"
-              />
-              <div className="studio-info">
-                <ListChecks size={18} />
-                {record
-                  ? "Project tasks and access remain linked to this project."
-                  : "We’ll add a five-step checklist: design, materials, execution, finishing and handover. Assign people from Team."}
-              </div>
-            </>
           )}
           {kind === "task" && (
             <>
