@@ -177,6 +177,34 @@ export function cashBalance(
   });
   return { amount: total / 100, missing };
 }
+export function availableBalance(
+  payments: StudioPayment[],
+  openings: CashOpening[],
+  projectIds: string[],
+  through: string,
+) {
+  let total = 0;
+  let assumed = 0;
+  projectIds.forEach((id) => {
+    const opening = openings.find(
+      (o) => o.projectId === id && o.date <= through,
+    );
+    if (!opening) assumed++;
+    total += cents(opening?.amount || 0);
+    payments
+      .filter(
+        (p) =>
+          p.projectId === id &&
+          p.date >= (opening?.date || "") &&
+          p.date <= through,
+      )
+      .forEach((p) => {
+        total += cents(p.amount) * (p.type === "Received" ? 1 : -1);
+      });
+  });
+  return { amount: total / 100, assumed };
+}
+
 export function receiptMessage(
   studio: string,
   project: StudioProject,

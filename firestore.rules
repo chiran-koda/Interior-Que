@@ -94,6 +94,11 @@ service cloud.firestore {
     allow read: if owner(company);
     allow create, update: if owner(company) && validOpening(request.resource.data);
    }
+   match /balanceOpenings/{opening} {
+    function validOpening(data){return data.keys().hasOnly(['projectId','amount','date']) && data.projectId == opening && projectExists(company,data.projectId) && data.amount is number && data.amount>=0 && data.amount<=1000000000 && text(data.date,10) && data.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');}
+    allow read: if owner(company);
+    allow create, update: if owner(company) && validOpening(request.resource.data);
+   }
   }
  }
 }

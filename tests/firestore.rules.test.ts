@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import "firebase/compat/firestore";
-import { beforeAll, afterAll, beforeEach, describe, it } from "vitest";
+import { beforeAll, afterAll, beforeEach, describe, it, expect } from "vitest";
 import {
   initializeTestEnvironment,
   assertSucceeds,
@@ -46,6 +46,27 @@ describe("Owner financial journals and configuration", () => {
     active: true,
   };
   const opening = { projectId: "p1", amount: 1000, date: "2026-10-01" };
+  it("keeps combined openings private and separate from legacy cash balances", async () => {
+    const ownerDb = db("owner");
+    await assertSucceeds(setDoc(ref(ownerDb, "cashOpenings/p1"), opening));
+    await assertSucceeds(
+      setDoc(ref(ownerDb, "balanceOpenings/p1"), { ...opening, amount: 2000 }),
+    );
+    expect((await getDoc(ref(ownerDb, "cashOpenings/p1"))).data()?.amount).toBe(
+      1000,
+    );
+    expect(
+      (await getDoc(ref(ownerDb, "balanceOpenings/p1"))).data()?.amount,
+    ).toBe(2000);
+    for (const id of ["client", "designer", "supervisor", "outsider"]) {
+      await assertFails(getDoc(ref(db(id), "balanceOpenings/p1")));
+      await assertFails(setDoc(ref(db(id), "balanceOpenings/p1"), opening));
+    }
+    await assertFails(setDoc(ref(ownerDb, "balanceOpenings/p2"), opening));
+    await assertFails(
+      setDoc(ref(ownerDb, "balanceOpenings/p1"), { ...opening, amount: -1 }),
+    );
+  });
   it("lets the owner add categories and cash openings, hiding both from other roles", async () => {
     await assertSucceeds(
       setDoc(ref(db("owner"), "moneyCategories/custom"), category),

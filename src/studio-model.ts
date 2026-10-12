@@ -131,6 +131,7 @@ export interface StudioData {
   invites: StudioInvite[];
   moneyCategories?: MoneyCategory[];
   cashOpenings?: CashOpening[];
+  balanceOpenings?: CashOpening[];
 }
 export const newStudio = (id: string, name: string): StudioData => ({
   id,
@@ -146,6 +147,7 @@ export const newStudio = (id: string, name: string): StudioData => ({
   invites: [],
   moneyCategories: [],
   cashOpenings: [],
+  balanceOpenings: [],
 });
 export function demoStudio(): StudioData {
   const w = seed();
@@ -302,6 +304,7 @@ export function scopedStudio(
     payments: member.role === "owner" ? data.payments : [],
     moneyCategories: member.role === "owner" ? data.moneyCategories || [] : [],
     cashOpenings: member.role === "owner" ? data.cashOpenings || [] : [],
+    balanceOpenings: member.role === "owner" ? data.balanceOpenings || [] : [],
     invites: member.role === "owner" ? data.invites : [],
   };
 }

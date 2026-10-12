@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  availableBalance,
   cashBalance,
   categoriesFor,
   expenseBreakdown,
@@ -63,6 +64,41 @@ const payments: StudioPayment[] = [
   },
 ];
 describe("money journal and calculations", () => {
+  it("combines every payment method and declares the zero-opening assumption", () => {
+    expect(availableBalance(payments, [], ["p1"], "2026-09-30")).toEqual({
+      amount: 120.1,
+      assumed: 1,
+    });
+    expect(availableBalance(payments, [], ["p1"], "2026-10-31")).toEqual({
+      amount: 110.1,
+      assumed: 1,
+    });
+    expect(
+      availableBalance(
+        payments,
+        [{ id: "p1", projectId: "p1", amount: 10, date: "2026-09-01" }],
+        ["p1", "p2"],
+        "2026-09-30",
+      ),
+    ).toEqual({ amount: 50.1, assumed: 1 });
+  });
+  it("includes earlier periods, respects the opening date and omits future transactions", () => {
+    const history = [
+      ...payments,
+      { ...payments[0], id: "older", date: "2026-08-01", amount: 25 },
+    ];
+    expect(availableBalance(history, [], ["p1"], "2026-09-30").amount).toBe(
+      145.1,
+    );
+    expect(
+      availableBalance(
+        history,
+        [{ id: "p1", projectId: "p1", amount: 100, date: "2026-09-15" }],
+        ["p1"],
+        "2026-09-30",
+      ),
+    ).toEqual({ amount: 119.95, assumed: 0 });
+  });
   it("shows paise instead of rounding away financial amounts", () => {
     expect(formatMoney(100.15, false)).toContain("100.15");
     expect(formatMoney(-125.5, false)).toContain("125.50");
@@ -182,9 +218,13 @@ describe("money journal and calculations", () => {
       { id: "p1", projectId: "p1", amount: 500, date: "2026-09-01" },
     ];
     data.moneyCategories = categoriesFor();
+    data.balanceOpenings = [
+      { id: "p1", projectId: "p1", amount: 1000, date: "2026-09-01" },
+    ];
     for (const member of data.members.filter((m) => m.role !== "owner")) {
       expect(scopedStudio(data, member).cashOpenings).toEqual([]);
       expect(scopedStudio(data, member).moneyCategories).toEqual([]);
+      expect(scopedStudio(data, member).balanceOpenings).toEqual([]);
     }
   });
 });

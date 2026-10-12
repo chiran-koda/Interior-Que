@@ -17,7 +17,7 @@ import {
   categoriesFor,
   formatMoney as money,
   categoryColors,
-  cashBalance,
+  availableBalance,
   expenseBreakdown,
   filterPayments,
   monthEnd,
@@ -79,9 +79,9 @@ export function MoneyWorkspace({
   );
   const totals = paymentTotals(period);
   const breakdown = expenseBreakdown(period, categories);
-  const cash = cashBalance(
+  const balance = availableBalance(
     data.payments,
-    data.cashOpenings || [],
+    data.balanceOpenings || [],
     data.projects
       .filter((p) => !projectId || p.id === projectId)
       .map((p) => p.id),
@@ -198,19 +198,24 @@ export function MoneyWorkspace({
             <Wallet size={22} />
           </span>
           <div>
-            <span>Cash on hand</span>
-            <strong>{cash.missing ? "—" : money(cash.amount, false)}</strong>
+            <span>Combined balance</span>
+            <strong>{money(balance.amount, false)}</strong>
             <small>
-              {cash.missing
-                ? `${cash.missing} project${cash.missing === 1 ? " needs" : "s need"} an opening balance`
-                : `Cash only · ${month ? "at month end" : "all recorded dates"}`}
+              All payment methods ·{" "}
+              {month ? "at month end" : "all recorded dates"}
             </small>
+            {balance.assumed > 0 && (
+              <small>
+                ₹0 opening assumed for {balance.assumed} project
+                {balance.assumed === 1 ? "" : "s"}.
+              </small>
+            )}
             <button
               className="money-text-button"
               onClick={() => setOpeningDialog(true)}
               disabled={!data.projects.length}
             >
-              Manage opening cash <Pencil size={12} />
+              Opening balance <Pencil size={12} />
             </button>
           </div>
         </article>
@@ -891,7 +896,11 @@ function OpeningEditor({
       projectId || data.projects[0]?.id || "",
     ),
     [error, setError] = useState("");
-  const opening = data.cashOpenings?.find((o) => o.projectId === selected);
+  const opening = data.balanceOpenings?.find((o) => o.projectId === selected);
+  const firstTransactionDate = data.payments
+    .filter((p) => p.projectId === selected)
+    .map((p) => p.date)
+    .sort()[0];
   const save = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -908,7 +917,7 @@ function OpeningEditor({
         onClose();
       else
         setError(
-          "Opening cash not saved. Check the workspace message and retry.",
+          "Opening balance not saved. Check the workspace message and retry.",
         );
     } catch (e) {
       setError((e as Error).message);
@@ -916,8 +925,8 @@ function OpeningEditor({
   };
   return (
     <Modal
-      title="Set opening cash"
-      subtitle="Cash in hand before transactions on the starting date."
+      title="Set opening balance"
+      subtitle="Total across cash, bank and UPI before transactions on the starting date."
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -941,7 +950,7 @@ function OpeningEditor({
         </label>
         <div className="form-grid" key={selected}>
           <Field
-            label="Opening cash (₹)"
+            label="Opening balance (₹)"
             name="amount"
             type="number"
             min={0}
@@ -955,6 +964,7 @@ function OpeningEditor({
             type="date"
             value={
               opening?.date ||
+              firstTransactionDate ||
               data.projects.find((p) => p.id === selected)?.start ||
               today()
             }
@@ -962,9 +972,11 @@ function OpeningEditor({
           />
         </div>
         <p className="form-hint">
-          Cash receipts add to this balance; cash expenses reduce it. Bank, UPI
-          and payments with an unspecified method are excluded. Set zero if
-          there was no opening cash.
+          Include your starting balance across every payment method. All
+          receipts add to this balance and all expenses reduce it, including
+          cash, bank, UPI, cheque and unspecified methods. Before you set an
+          opening balance, the app calculates from recorded transactions with a
+          zero opening.
         </p>
         {error && (
           <p className="studio-error" role="alert">
@@ -976,7 +988,7 @@ function OpeningEditor({
             Cancel
           </Button>
           <Button variant="primary" disabled={busy} type="submit">
-            Save opening cash
+            Save opening balance
           </Button>
         </div>
       </form>

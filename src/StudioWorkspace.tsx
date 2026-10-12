@@ -106,7 +106,8 @@ type CollectionKey =
   | "members"
   | "materials"
   | "moneyCategories"
-  | "cashOpenings";
+  | "cashOpenings"
+  | "balanceOpenings";
 const pageIcons = {
   Today: Home,
   Projects: Layers,
@@ -1294,7 +1295,10 @@ export function StudioWorkspace({
                   run(() => save("moneyCategories", record), "Category saved.")
                 }
                 onOpening={(record) =>
-                  run(() => save("cashOpenings", record), "Opening cash saved.")
+                  run(
+                    () => save("balanceOpenings", record),
+                    "Opening balance saved.",
+                  )
                 }
               />
             </Suspense>

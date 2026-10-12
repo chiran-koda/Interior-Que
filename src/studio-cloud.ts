@@ -205,6 +205,7 @@ export function watchStudio(
       | "invites"
       | "moneyCategories"
       | "cashOpenings"
+      | "balanceOpenings"
     >,
     filters: any[] = [],
   ) => {
@@ -236,6 +237,7 @@ export function watchStudio(
       "invites",
       "moneyCategories",
       "cashOpenings",
+      "balanceOpenings",
     ] as const)
       listen(key);
     let expenses: any[] = [],
@@ -282,7 +284,8 @@ type RecordCollection =
   | "payments"
   | "invites";
 // Owner-only financial configuration uses dedicated collections.
-type FinancialCollection = "moneyCategories" | "cashOpenings";
+type FinancialCollection =
+  "moneyCategories" | "cashOpenings" | "balanceOpenings";
 export async function saveRecord(
   companyId: string,
   key: RecordCollection | FinancialCollection,
