@@ -1,0 +1,752 @@
+/* Presentation only: keep the existing grids, content and workflows. */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/plus-jakarta-sans-500.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/plus-jakarta-sans-600.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/plus-jakarta-sans-700.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/plus-jakarta-sans-800.ttf") format("truetype");
+}
+
+:root {
+  --accent: #4f46e5;
+  --accent-light: #6366f1;
+  --accent-dark: #4338ca;
+  --bg: linear-gradient(180deg, #eceefb 0%, #f5f6fb 40%);
+  --surface: #ffffff;
+  --text: #1b1d2a;
+  --text-muted: #5b6070;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --success-gradient: linear-gradient(135deg, #16a34a, #15803d);
+  --warning-gradient: linear-gradient(135deg, #d97706, #b45309);
+  --danger-gradient: linear-gradient(135deg, #dc2626, #b91c1c);
+  --hero-gradient: linear-gradient(135deg, #5b52ee, #4338ca);
+  --accent-gradient: linear-gradient(
+    135deg,
+    var(--accent-light),
+    var(--accent)
+  );
+  --track: #e9eaf4;
+  --border: #e2e3ee;
+  --indigo-tint: #eef0ff;
+  --success-tint: #f0fdf4;
+  --warning-tint: #fffbeb;
+  --danger-tint: #fef2f2;
+  --shadow-card:
+    0 0 0 1px rgba(23, 25, 50, 0.03), 0 1px 2px rgba(23, 25, 50, 0.04),
+    0 6px 14px rgba(23, 25, 50, 0.05), 0 18px 32px -10px rgba(23, 25, 50, 0.1);
+  --shadow-hero:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 4px rgba(67, 56, 202, 0.2),
+    0 14px 24px -4px rgba(67, 56, 202, 0.35),
+    0 28px 44px -14px rgba(67, 56, 202, 0.35);
+  --shadow-nav:
+    0 0 0 1px rgba(23, 25, 50, 0.04), 0 4px 10px rgba(23, 25, 50, 0.08),
+    0 20px 36px -8px rgba(23, 25, 50, 0.22);
+  --shadow-chip:
+    0 1px 2px rgba(23, 25, 50, 0.06), 0 4px 10px rgba(23, 25, 50, 0.05);
+  --shadow-accent-btn:
+    0 2px 4px rgba(79, 70, 229, 0.25), 0 8px 16px -4px rgba(79, 70, 229, 0.4);
+  --shadow-press:
+    0 0 0 1px rgba(23, 25, 50, 0.03), 0 2px 5px rgba(23, 25, 50, 0.06);
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  color: var(--text);
+  background: #f5f6fb;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 500;
+}
+body :is(.studio-app, .studio-gate, .modal) {
+  --ink: var(--text);
+  --quiet: var(--text-muted);
+  --edge: var(--border);
+  --action: var(--accent);
+  color: var(--text);
+}
+body :is(.studio-app, .studio-gate) {
+  background: var(--bg);
+}
+body :is(.studio-app, .studio-gate, .modal) * {
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+}
+body
+  :is(.studio-app, .studio-gate, .modal)
+  :is(input, select, textarea, button) {
+  font-weight: 500;
+}
+body :is(.studio-app, .studio-gate, .modal) :is(h1, h2, h3) {
+  color: var(--text);
+  font-weight: 800;
+}
+.studio-app :is(.studio-page-heading h1, .studio-project-overview h2),
+.modal > header h2 {
+  font-size: 22px;
+}
+.studio-app :is(.studio-section-heading h2, .money-section-heading h2) {
+  font-size: 17px;
+  font-weight: 700;
+}
+.studio-app
+  :is(
+    small,
+    .form-hint,
+    .photo-help,
+    .due-date,
+    .money-period,
+    .money-card small,
+    .money-card span:not(.money-card-icon),
+    .money-table-footer,
+    .studio-footer
+  ),
+.modal
+  :is(
+    small,
+    .form-hint,
+    .photo-help,
+    .project-date-help,
+    .project-form-footer > div > span
+  ) {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.studio-app
+  :is(
+    .studio-summary > button > span,
+    .studio-topbar > span,
+    .studio-page-heading p,
+    .studio-person-card p,
+    .studio-material-row small,
+    .studio-member small
+  ),
+.studio-gate :is(p, .gate-buttons > span),
+.modal
+  :is(
+    .field > span,
+    .project-field > span,
+    .project-section-heading p,
+    .project-start-guide p,
+    .project-brief summary span,
+    .project-date-tools > span
+  ) {
+  color: var(--text-muted);
+}
+.studio-app
+  :is(
+    .studio-summary b,
+    .money-card strong,
+    .money-summary strong,
+    .money-summary b
+  ),
+.modal .money-donut-center strong {
+  font-size: clamp(24px, 2vw, 28px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.studio-app .money-card strong {
+  overflow-wrap: anywhere;
+}
+.studio-app .studio-sidebar .studio-brand small {
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  white-space: nowrap;
+}
+body :is(.studio-app, .studio-gate, .modal) :is(button, .btn) {
+  border-radius: 999px;
+  min-width: 44px;
+  min-height: 44px;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+body :is(.studio-app, .studio-gate, .modal) .btn {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-chip);
+  font-weight: 700;
+}
+body :is(.studio-app, .studio-gate, .modal) .btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--shadow-accent-btn);
+}
+body :is(.studio-app, .studio-gate, .modal) .btn.primary:hover {
+  background: var(--accent-dark);
+}
+body :is(.studio-app, .studio-gate, .modal) :is(button, a):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+body :is(.studio-app, .studio-gate, .modal) :is(input, select, textarea):focus {
+  outline: 3px solid #daddfe;
+  border-color: var(--accent);
+  outline-offset: 1px;
+}
+body :is(.studio-app, .studio-gate, .modal) :is(input, select, textarea) {
+  color: var(--text);
+  accent-color: var(--accent);
+}
+body :is(.studio-app, .studio-gate, .modal) :is(input, textarea)::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+.studio-app
+  :is(
+    .studio-panel,
+    .studio-project-card,
+    .studio-approval,
+    .studio-update,
+    .studio-file,
+    .studio-person-card,
+    .photo-storage
+  ),
+.studio-gate :is(.gate-role, .gate-photo, .join-grid form) {
+  background-color: var(--surface);
+  border-color: transparent;
+  border-radius: 22px;
+  box-shadow: var(--shadow-card);
+}
+.studio-app :is(.studio-summary > button, .money-card, .money-summary > div) {
+  background: var(--surface);
+  border-color: transparent;
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+}
+.studio-app :is(.studio-project-card, .studio-summary > button),
+.studio-gate .gate-role {
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+.studio-app :is(.studio-project-card, .studio-summary > button):hover,
+.studio-gate .gate-role:hover {
+  box-shadow: var(--shadow-nav);
+  border-color: transparent;
+}
+.studio-app :is(.studio-project-card, .studio-summary > button):active,
+.studio-gate .gate-role:active {
+  transform: scale(0.98);
+  box-shadow: var(--shadow-press);
+}
+.studio-app .studio-summary > button.summary-overdue {
+  background: var(--danger-tint);
+  position: relative;
+}
+.studio-app .summary-overdue b,
+.studio-app .due-date.overdue {
+  color: var(--danger);
+}
+.studio-app .summary-overdue::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 0;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--danger-gradient);
+  box-shadow: 0 3px 6px rgba(185, 28, 28, 0.3);
+}
+.studio-app .studio-approval {
+  position: relative;
+}
+.studio-app .studio-approval:has(.badge)::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 0;
+  height: 5px;
+  border-radius: 999px;
+}
+.studio-app .studio-approval:has(.badge.green)::before {
+  background: var(--success-gradient);
+  box-shadow: 0 3px 6px rgba(21, 128, 61, 0.3);
+}
+.studio-app .studio-approval:has(.badge.amber)::before {
+  background: var(--warning-gradient);
+  box-shadow: 0 3px 6px rgba(180, 83, 9, 0.3);
+}
+.studio-app .studio-approval:has(.badge.red)::before {
+  background: var(--danger-gradient);
+  box-shadow: 0 3px 6px rgba(185, 28, 28, 0.3);
+}
+.studio-app .studio-today-intro {
+  background: var(--hero-gradient);
+  border-color: transparent;
+  border-radius: 22px;
+  box-shadow: var(--shadow-hero);
+  color: #fff;
+}
+.studio-app .studio-today-intro :is(h2, p, .eyebrow) {
+  color: #fff;
+}
+.studio-app .studio-today-intro .btn {
+  background: #fff;
+  color: var(--accent-dark);
+  border-color: transparent;
+}
+.studio-app .studio-today-intro .btn.primary {
+  background: #fff;
+  color: var(--accent-dark);
+  box-shadow: var(--shadow-chip);
+}
+.studio-app .studio-today-intro .btn:hover {
+  background: var(--indigo-tint);
+}
+.studio-app .studio-sidebar {
+  background: linear-gradient(180deg, #242144, #1b1d2a);
+  color: #fff;
+}
+.studio-app .studio-company {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+}
+.studio-app
+  .studio-sidebar
+  :is(
+    .nav-label,
+    .studio-person small,
+    .studio-company small,
+    .demo-role-label,
+    .studio-brand small
+  ) {
+  color: #d0d2e9;
+}
+.studio-app .studio-sidebar nav > button {
+  color: #e8e9fa;
+}
+.studio-app .studio-sidebar nav > button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.studio-app .studio-sidebar nav > button.active {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: var(--shadow-accent-btn);
+}
+.studio-app .studio-sidebar nav b {
+  color: var(--accent-dark);
+  background: var(--indigo-tint);
+  border-radius: 999px;
+}
+.studio-app .demo-role-label select {
+  background: #353150;
+  color: #fff;
+  border-color: #696580;
+  border-radius: 18px;
+}
+.studio-app .studio-person {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.studio-app .studio-sidebar-bottom > button {
+  color: #e8e9fa;
+}
+body :is(.studio-app, .studio-gate) .studio-brand > span {
+  background: var(--accent);
+  box-shadow: var(--shadow-accent-btn);
+  border-radius: 18px;
+}
+.studio-app .studio-topbar {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: var(--border);
+}
+.studio-app .studio-topbar > label {
+  background: #f5f6fb;
+  border-color: transparent;
+  border-radius: 999px;
+  box-shadow: var(--shadow-chip);
+}
+.studio-app .studio-topbar > span > b {
+  color: var(--text);
+}
+.studio-app :is(.studio-demo-note, .studio-info),
+.modal .studio-info {
+  background: var(--indigo-tint);
+  color: var(--accent-dark);
+  border-color: transparent;
+  border-radius: 18px;
+}
+.studio-app :is(.studio-error, .blocker-note),
+.modal :is(.studio-error, .project-submit-error) {
+  color: var(--danger);
+  background: var(--danger-tint);
+  border-color: transparent;
+  border-radius: 18px;
+}
+.studio-app .studio-success,
+.modal .studio-success {
+  background: var(--success-tint);
+  color: var(--success);
+  border-color: transparent;
+  border-radius: 18px;
+}
+.studio-app .studio-development-note {
+  color: var(--warning);
+  background: var(--warning-tint);
+  border-color: transparent;
+  border-radius: 18px;
+}
+.studio-app
+  :is(
+    .eyebrow,
+    .studio-back,
+    .studio-section-heading button,
+    .studio-task-edit,
+    .money-text-button,
+    .studio-task-row strong
+  ),
+.studio-gate .eyebrow {
+  color: var(--accent-dark);
+}
+body :is(.studio-app, .studio-gate, .modal) .empty-symbol {
+  color: var(--accent-dark);
+}
+.studio-app .studio-task-edit {
+  border-color: transparent;
+  background: var(--indigo-tint);
+  box-shadow: var(--shadow-chip);
+  font-size: 12px;
+}
+.studio-app .studio-filters button {
+  color: var(--text-muted);
+  background: var(--surface);
+  box-shadow: var(--shadow-chip);
+  border-color: transparent;
+}
+.studio-app .studio-filters button[aria-pressed="true"],
+.studio-app .money-toolbar button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: var(--shadow-accent-btn);
+}
+.studio-app .task-check {
+  min-width: 25px;
+  min-height: 25px;
+  position: relative;
+  border-color: #818699;
+  background: #fff;
+}
+.studio-app .task-check::after {
+  content: "";
+  position: absolute;
+  min-width: 44px;
+  min-height: 44px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.studio-app .done .task-check {
+  background: var(--success-gradient);
+  border-color: transparent;
+  color: #fff;
+}
+body :is(.studio-app, .modal) .badge {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-chip);
+}
+body :is(.studio-app, .modal) .badge.green {
+  color: var(--success);
+  background: var(--success-tint);
+}
+body :is(.studio-app, .modal) .badge.amber {
+  color: var(--warning);
+  background: var(--warning-tint);
+}
+body :is(.studio-app, .modal) .badge.red {
+  color: var(--danger);
+  background: var(--danger-tint);
+}
+body :is(.studio-app, .modal) .badge.blue {
+  color: var(--accent-dark);
+  background: var(--indigo-tint);
+}
+body :is(.studio-app, .modal) .badge.gray {
+  color: var(--text-muted);
+  background: #f1f2f6;
+}
+body :is(.studio-app, .modal) .status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
+}
+body :is(.studio-app, .modal) .badge.red .status-dot {
+  box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.12);
+}
+body :is(.studio-app, .modal) .badge.green .status-dot {
+  box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.12);
+}
+body :is(.studio-app, .modal) .badge.amber .status-dot {
+  box-shadow: 0 0 0 4px rgba(180, 83, 9, 0.12);
+}
+.studio-app .studio-connection i {
+  width: 10px;
+  height: 10px;
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.12);
+}
+.studio-app .studio-connection.offline i {
+  background: var(--warning);
+  box-shadow: 0 0 0 4px rgba(180, 83, 9, 0.12);
+}
+.studio-app .progress,
+.studio-app .money-bar-track {
+  height: 8px;
+  min-height: 8px;
+  background: var(--track);
+  border-radius: 999px;
+}
+.studio-app .progress > span {
+  background: var(--accent-gradient);
+  box-shadow: 0 3px 6px rgba(79, 70, 229, 0.25);
+  border-radius: 999px;
+}
+.studio-app .money-bar-track > span {
+  box-shadow: 0 3px 6px rgba(79, 70, 229, 0.2);
+  border-radius: 999px;
+}
+.studio-app .progress-wrap > span:last-child {
+  color: var(--text-muted);
+}
+.studio-app :is(.money-card.income strong, .money-income, .money-type.income),
+.modal .positive {
+  color: var(--success);
+}
+.studio-app
+  :is(.money-card.expense strong, .money-expense, .money-type.expense),
+.modal .negative {
+  color: var(--danger);
+}
+.studio-app :is(.money-card.net strong, .money-card.cash strong) {
+  color: var(--accent-dark);
+}
+.studio-app .money-card.income .money-card-icon {
+  color: var(--success);
+  background: var(--success-tint);
+}
+.studio-app .money-card.expense .money-card-icon {
+  color: var(--danger);
+  background: var(--danger-tint);
+}
+.studio-app :is(.money-card.net, .money-card.cash) .money-card-icon {
+  color: var(--accent-dark);
+  background: var(--indigo-tint);
+}
+.studio-app
+  :is(
+    .money-toolbar > label,
+    .money-journal-filters > label,
+    .money-toolbar select,
+    .money-journal-filters select
+  ) {
+  border-radius: 999px;
+  border-color: var(--border);
+  min-height: 44px;
+  color: var(--text);
+  background: var(--surface);
+}
+.studio-app
+  :is(.money-table th, .money-category-bar small, .money-chart-legend b) {
+  color: var(--text-muted);
+}
+.studio-app .money-table th {
+  background: #f5f6fb;
+}
+.studio-app .money-type {
+  border-radius: 999px;
+  font-weight: 600;
+}
+.studio-app .money-type.income {
+  background: var(--success-tint);
+}
+.studio-app .money-type.expense {
+  background: var(--danger-tint);
+}
+.studio-app .money-row-actions .icon-btn {
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--accent-dark);
+  background: var(--indigo-tint);
+}
+.studio-app :is(.photo-upload-list progress, .photo-storage progress) {
+  height: 8px;
+  accent-color: var(--accent);
+}
+.studio-app
+  :is(
+    .photo-upload-list progress,
+    .photo-storage progress
+  )::-webkit-progress-bar {
+  background: var(--track);
+  border-radius: 999px;
+}
+.studio-app
+  :is(
+    .photo-upload-list progress,
+    .photo-storage progress
+  )::-webkit-progress-value {
+  background: var(--accent-gradient);
+  border-radius: 999px;
+  box-shadow: 0 3px 6px rgba(79, 70, 229, 0.25);
+}
+.modal {
+  color: var(--text);
+  background: var(--surface);
+  border-color: transparent;
+  border-radius: 22px;
+  box-shadow: var(--shadow-nav);
+}
+.modal > header {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.modal > header p,
+.modal
+  :is(
+    .project-form-footer > div > span,
+    .project-guide-next b,
+    .project-start-guide li,
+    .project-brief summary
+  ) {
+  color: var(--text-muted);
+}
+.modal > header .icon-btn {
+  min-width: 44px;
+  color: var(--text-muted);
+  background: #f5f6fb;
+  border-color: transparent;
+}
+.modal.project-dialog {
+  border-radius: 22px;
+}
+.modal.project-dialog > header h2 {
+  color: var(--text);
+}
+.modal .project-start-guide {
+  background: var(--indigo-tint);
+  border-color: var(--border);
+}
+.modal :is(.project-guide-icon, .project-section-heading > span) {
+  color: var(--accent-dark);
+  background: #e4e7ff;
+  border-radius: 18px;
+}
+.modal .project-date-tools button {
+  color: var(--accent-dark);
+  background: var(--indigo-tint);
+  box-shadow: var(--shadow-chip);
+  border-color: transparent;
+}
+.modal .project-date-help.invalid {
+  color: var(--danger);
+}
+.modal
+  :is(
+    .project-field input,
+    .project-field select,
+    .project-field textarea,
+    .field input,
+    .field select,
+    .field textarea
+  ) {
+  border-color: #b9bdcd;
+  border-radius: 18px;
+}
+.modal .project-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.modal :is(.project-brief, .project-form-footer, .project-guide-next) {
+  border-color: var(--border);
+}
+.modal .project-form-footer {
+  background: var(--surface);
+}
+.modal .project-form-buttons .btn.primary {
+  background: var(--accent);
+}
+.modal .project-start-guide li svg {
+  color: var(--success);
+}
+.studio-gate .gate-role > svg {
+  color: var(--accent-dark);
+  background: var(--indigo-tint);
+  border-radius: 18px;
+}
+.studio-gate .gate-photo :is(b, small) {
+  color: #fff;
+}
+.studio-gate .gate-promises svg {
+  color: var(--success);
+}
+@media (max-width: 800px) {
+  .studio-app .studio-mobile-nav {
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    height: 68px;
+    border: 0;
+    border-radius: 30px;
+    background: var(--surface);
+    box-shadow: var(--shadow-nav);
+    padding: 8px;
+  }
+  .studio-app .studio-mobile-nav button {
+    color: var(--text-muted);
+    min-height: 44px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+  }
+  .studio-app .studio-mobile-nav button[aria-current="page"] {
+    color: var(--accent-dark);
+    background: var(--indigo-tint);
+  }
+  .studio-app .studio-content main {
+    padding-bottom: calc(116px + env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 450px) {
+  .modal.project-dialog {
+    border-radius: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body :is(.studio-app, .studio-gate, .modal) * {
+    transition: none !important;
+    animation: none !important;
+  }
+  .studio-app :is(.studio-project-card, .studio-summary > button):active,
+  .studio-gate .gate-role:active {
+    transform: none;
+  }
+}

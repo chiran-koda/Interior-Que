@@ -848,6 +848,7 @@ export function StudioWorkspace({
                 ].map((s) => (
                   <button
                     key={s.label}
+                    className={s.label === "Overdue tasks" && s.value > 0 ? "summary-overdue" : undefined}
                     onClick={() => {
                       navigate(s.target as StudioPage);
                       if (s.label === "Overdue tasks") setTaskFilter("Overdue");
