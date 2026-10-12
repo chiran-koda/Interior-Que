@@ -32,6 +32,13 @@ export function PhotoUploader({
   onDemoSave,
   onClose,
   onUploaded,
+  embedded = false,
+  initialRoom = "",
+  initialShared = false,
+  onPhotoSaved,
+  onBusyChange,
+  onPendingChange,
+  maxPhotos = 20,
 }: {
   company: string;
   projects: StudioProject[];
@@ -41,6 +48,13 @@ export function PhotoUploader({
   onDemoSave: (photo: StudioFile) => Promise<void>;
   onClose: () => void;
   onUploaded: () => void;
+  embedded?: boolean;
+  initialRoom?: string;
+  initialShared?: boolean;
+  onPhotoSaved?: (id: string) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onPendingChange?: (count: number) => void;
+  maxPhotos?: number;
 }) {
   const [project, setProject] = useState(
     initialProject || projects[0]?.id || "",
@@ -56,6 +70,11 @@ export function PhotoUploader({
   list.current = entries;
   const locked = useRef(false);
   useEffect(
+    () =>
+      onPendingChange?.(entries.filter((e) => e.status !== "Uploaded").length),
+    [entries, onPendingChange],
+  );
+  useEffect(
     () => () => {
       for (const entry of list.current) URL.revokeObjectURL(entry.preview);
     },
@@ -67,8 +86,8 @@ export function PhotoUploader({
     );
   const add = (files: File[]) => {
     setError("");
-    if (entries.length + files.length > 20) {
-      setError("Choose up to 20 photos per batch.");
+    if (entries.length + files.length > maxPhotos) {
+      setError(`Choose up to ${maxPhotos} photos per batch.`);
       return;
     }
     setEntries((current) => [
@@ -84,12 +103,15 @@ export function PhotoUploader({
   };
   const run = async (retryId?: string) => {
     if (locked.current) return;
-    if (!project || !room.trim() || !entries.length) {
+    const uploadRoom = embedded ? initialRoom || "Site" : room;
+    const uploadShared = embedded ? initialShared : shared;
+    if (!project || !uploadRoom.trim() || !entries.length) {
       setError("Choose a project, room or area, and at least one photo.");
       return;
     }
     locked.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     setStarted(true);
     setError("");
     try {
@@ -125,9 +147,9 @@ export function PhotoUploader({
                 name: prepared.name,
                 url,
                 kind: "photo",
-                room: room.trim(),
+                room: uploadRoom.trim(),
                 caption: caption.trim(),
-                clientVisible: shared,
+                clientVisible: uploadShared,
                 authorId,
                 date: today(),
                 sizeBytes: prepared.blob.size,
@@ -142,14 +164,15 @@ export function PhotoUploader({
                 entry.id,
                 prepared,
                 {
-                  room: room.trim(),
+                  room: uploadRoom.trim(),
                   caption: caption.trim(),
-                  clientVisible: shared,
+                  clientVisible: uploadShared,
                 },
                 (progress) => patch(entry.id, { progress }),
               );
             patch(entry.id, { status: "Uploaded", progress: 100 });
             onUploaded();
+            onPhotoSaved?.(entry.id);
           } catch (e) {
             patch(entry.id, { status: "Failed", error: (e as Error).message });
           }
@@ -159,181 +182,192 @@ export function PhotoUploader({
     } finally {
       locked.current = false;
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
   const configured = demo || !!photoServiceUrl();
   const close = () => {
     if (!locked.current) onClose();
   };
-  return (
+  const content = (
+    <div className="photo-upload-body">
+      {demo && (
+        <div className="studio-info">
+          Demo photos are saved on this device only.
+        </div>
+      )}
+      {!configured && (
+        <p className="studio-error" role="alert">
+          Company photo storage is awaiting setup. Your owner needs to connect
+          the photo service once. You won’t need a storage account.
+        </p>
+      )}
+      {!embedded && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              <span>Project *</span>
+              <select
+                value={project}
+                disabled={started}
+                onChange={(e) => setProject(e.target.value)}
+              >
+                <option value="">Choose a project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Room / area *</span>
+              <input
+                value={room}
+                disabled={started}
+                maxLength={120}
+                placeholder="e.g. Kitchen, first floor"
+                onChange={(e) => setRoom(e.target.value)}
+              />
+            </label>
+          </div>
+          <label className="field">
+            <span>
+              What changed? <small>Optional</small>
+            </span>
+            <input
+              value={caption}
+              disabled={started}
+              maxLength={2000}
+              placeholder="e.g. Ceiling framework completed today"
+              onChange={(e) => setCaption(e.target.value)}
+            />
+          </label>
+          <label className="studio-check">
+            <input
+              type="checkbox"
+              checked={shared}
+              disabled={started}
+              onChange={(e) => setShared(e.target.checked)}
+            />
+            Share these photos with the client
+          </label>
+        </>
+      )}
+      {!started && (
+        <label className="photo-drop">
+          <ImagePlus size={32} />
+          <b>Choose photos from your phone or computer</b>
+          <span>JPEG, PNG or WebP · up to {maxPhotos} at a time</span>
+          <input
+            aria-label="Choose project photos"
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp"
+            disabled={!configured}
+            onChange={(e) => {
+              add([...(e.target.files || [])]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      )}
+      <div className="photo-upload-list" aria-live="polite">
+        {entries.map((entry) => (
+          <article key={entry.id}>
+            <img src={entry.preview} alt={entry.file.name} />
+            <div>
+              <b>{entry.file.name}</b>
+              <small>
+                {entry.prepared
+                  ? `${bytesLabel(entry.prepared.blob.size)} · ${entry.prepared.width} × ${entry.prepared.height}`
+                  : bytesLabel(entry.file.size)}
+              </small>
+              <span>
+                {entry.status === "Uploaded" ? (
+                  <>
+                    <Check size={14} />
+                    Saved to project
+                  </>
+                ) : (
+                  entry.status
+                )}
+              </span>
+              {entry.status === "Uploading" && (
+                <progress
+                  aria-label={`Upload progress for ${entry.file.name}`}
+                  value={entry.progress}
+                  max={100}
+                />
+              )}
+              {entry.error && <p className="studio-error">{entry.error}</p>}
+            </div>
+            {entry.status === "Failed" && (
+              <Button disabled={busy} onClick={() => run(entry.id)}>
+                <RotateCcw size={15} />
+                Retry
+              </Button>
+            )}
+            {(!started || entry.status === "Failed") && !busy && (
+              <button
+                className="icon-btn"
+                aria-label={`Remove ${entry.file.name}`}
+                onClick={() => {
+                  URL.revokeObjectURL(entry.preview);
+                  setEntries((current) =>
+                    current.filter((e) => e.id !== entry.id),
+                  );
+                }}
+              >
+                <X size={18} />
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+      {error && (
+        <p className="studio-error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="photo-help">
+        Photos are resized to a 2,000 pixel long edge. Location metadata is
+        removed. Team-only photos stay private.
+      </p>
+      <div className="photo-upload-actions">
+        {!embedded && (
+          <Button disabled={busy} onClick={close}>
+            {started ? "Done" : "Cancel"}
+          </Button>
+        )}
+        <Button
+          variant="primary"
+          disabled={
+            busy || !configured || !entries.some((e) => e.status !== "Uploaded")
+          }
+          onClick={() => run()}
+        >
+          <Upload size={17} />
+          {busy
+            ? "Uploading…"
+            : started
+              ? "Retry remaining photos"
+              : `Upload ${entries.length || ""} photo${entries.length === 1 ? "" : "s"}`}
+        </Button>
+      </div>
+    </div>
+  );
+  return embedded ? (
+    content
+  ) : (
     <Modal
       title="Upload project photos"
       subtitle="Choose photos. We’ll resize them and keep them beside the project."
       onClose={close}
       wide
+      closeDisabled={busy}
     >
-      <div className="photo-upload-body">
-        {demo && (
-          <div className="studio-info">
-            Demo photos are saved on this device only.
-          </div>
-        )}
-        {!configured && (
-          <p className="studio-error" role="alert">
-            Company photo storage is awaiting setup. Your owner needs to connect
-            the photo service once. You won’t need a storage account.
-          </p>
-        )}
-        <div className="form-grid">
-          <label className="field">
-            <span>Project *</span>
-            <select
-              value={project}
-              disabled={started}
-              onChange={(e) => setProject(e.target.value)}
-            >
-              <option value="">Choose a project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Room / area *</span>
-            <input
-              value={room}
-              disabled={started}
-              maxLength={120}
-              placeholder="e.g. Kitchen, first floor"
-              onChange={(e) => setRoom(e.target.value)}
-            />
-          </label>
-        </div>
-        <label className="field">
-          <span>
-            What changed? <small>Optional</small>
-          </span>
-          <input
-            value={caption}
-            disabled={started}
-            maxLength={2000}
-            placeholder="e.g. Ceiling framework completed today"
-            onChange={(e) => setCaption(e.target.value)}
-          />
-        </label>
-        <label className="studio-check">
-          <input
-            type="checkbox"
-            checked={shared}
-            disabled={started}
-            onChange={(e) => setShared(e.target.checked)}
-          />
-          Share these photos with the client
-        </label>
-        {!started && (
-          <label className="photo-drop">
-            <ImagePlus size={32} />
-            <b>Choose photos from your phone or computer</b>
-            <span>JPEG, PNG or WebP · up to 20 at a time</span>
-            <input
-              aria-label="Choose project photos"
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp"
-              disabled={!configured}
-              onChange={(e) => {
-                add([...(e.target.files || [])]);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        )}
-        <div className="photo-upload-list" aria-live="polite">
-          {entries.map((entry) => (
-            <article key={entry.id}>
-              <img src={entry.preview} alt={entry.file.name} />
-              <div>
-                <b>{entry.file.name}</b>
-                <small>
-                  {entry.prepared
-                    ? `${bytesLabel(entry.prepared.blob.size)} · ${entry.prepared.width} × ${entry.prepared.height}`
-                    : bytesLabel(entry.file.size)}
-                </small>
-                <span>
-                  {entry.status === "Uploaded" ? (
-                    <>
-                      <Check size={14} />
-                      Saved to project
-                    </>
-                  ) : (
-                    entry.status
-                  )}
-                </span>
-                {entry.status === "Uploading" && (
-                  <progress
-                    aria-label={`Upload progress for ${entry.file.name}`}
-                    value={entry.progress}
-                    max={100}
-                  />
-                )}
-                {entry.error && <p className="studio-error">{entry.error}</p>}
-              </div>
-              {entry.status === "Failed" && (
-                <Button disabled={busy} onClick={() => run(entry.id)}>
-                  <RotateCcw size={15} />
-                  Retry
-                </Button>
-              )}
-              {!started && (
-                <button
-                  className="icon-btn"
-                  aria-label={`Remove ${entry.file.name}`}
-                  onClick={() => {
-                    URL.revokeObjectURL(entry.preview);
-                    setEntries((current) =>
-                      current.filter((e) => e.id !== entry.id),
-                    );
-                  }}
-                >
-                  <X size={18} />
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
-        {error && (
-          <p className="studio-error" role="alert">
-            {error}
-          </p>
-        )}
-        <p className="photo-help">
-          Photos are resized to a 2,000 pixel long edge. Location metadata is
-          removed. Team-only photos stay private.
-        </p>
-        <div className="photo-upload-actions">
-          <Button disabled={busy} onClick={close}>
-            {started ? "Done" : "Cancel"}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={
-              busy ||
-              !configured ||
-              !entries.some((e) => e.status !== "Uploaded")
-            }
-            onClick={() => run()}
-          >
-            <Upload size={17} />
-            {busy
-              ? "Uploading…"
-              : started
-                ? "Retry remaining photos"
-                : `Upload ${entries.length || ""} photo${entries.length === 1 ? "" : "s"}`}
-          </Button>
-        </div>
-      </div>
+      {content}
     </Modal>
   );
 }

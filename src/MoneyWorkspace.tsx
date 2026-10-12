@@ -567,6 +567,9 @@ function PaymentEditor({
   );
   const [error, setError] = useState("");
   const [id] = useState(record?.id || uid());
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    record?.projectId || projectId || data.projects[0]?.id || "",
+  );
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -590,6 +593,14 @@ function PaymentEditor({
       const mode = f("mode") as StudioPayment["mode"];
       if (!paymentModes.includes(mode!))
         throw new Error("Choose a payment method.");
+      const milestoneId = type === "Received" ? f("milestoneId") : "";
+      if (
+        milestoneId &&
+        !data.paymentSchedules?.some(
+          (s) => s.id === milestoneId && s.projectId === selectedProject,
+        )
+      )
+        throw new Error("Choose a milestone from this project.");
       if (
         await onSave({
           id,
@@ -600,6 +611,7 @@ function PaymentEditor({
           date: validDate(f("date")),
           categoryId: category.id,
           mode,
+          ...(milestoneId ? { milestoneId } : {}),
         })
       )
         onClose();
@@ -637,20 +649,23 @@ function PaymentEditor({
               <option value="Spent">Expense paid</option>
             </select>
           </label>
-          <Field
-            label="Project"
-            name="projectId"
-            value={record?.projectId || projectId || data.projects[0]?.id}
-            required
-          >
-            {data.projects
-              .filter((p) => !record || p.id === record.projectId)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-          </Field>
+          <label className="field">
+            <span>Project *</span>
+            <select
+              name="projectId"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              required
+            >
+              {data.projects
+                .filter((p) => !record || p.id === record.projectId)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </select>
+          </label>
           <Field
             label="Amount (₹)"
             name="amount"
@@ -703,6 +718,23 @@ function PaymentEditor({
             ))}
           </Field>
         </div>
+        {type === "Received" && (
+          <Field
+            key={selectedProjectId}
+            label="Payment milestone (optional)"
+            name="milestoneId"
+            value={record?.milestoneId || ""}
+          >
+            <option value="">No milestone</option>
+            {(data.paymentSchedules || [])
+              .filter((s) => s.projectId === selectedProjectId)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
+          </Field>
+        )}
         <Field
           label="Description"
           name="description"

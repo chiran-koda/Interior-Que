@@ -1,4 +1,15 @@
 import { seed, today, uid } from "./model";
+import type {
+  ProjectBudget,
+  PaymentSchedule,
+  Selection,
+  ChangeOrder,
+  Drawing,
+  DrawingHead,
+  PurchaseOrder,
+  Snag,
+  Handover,
+} from "./project-operations";
 
 export type StudioRole = "owner" | "designer" | "supervisor" | "client";
 export const roleNames: Record<StudioRole, string> = {
@@ -47,6 +58,10 @@ export interface SiteUpdate {
   summary: string;
   blocker: string;
   clientVisible: boolean;
+  tomorrow?: string;
+  shortages?: string;
+  workers?: number;
+  photoIds?: string[];
 }
 export interface Approval {
   id: string;
@@ -85,6 +100,7 @@ export interface StudioPayment {
   type: "Received" | "Spent";
   date: string;
   categoryId?: string;
+  milestoneId?: string;
   mode?: "Cash" | "Bank transfer" | "UPI" | "Cheque" | "Other" | "Unspecified";
 }
 export interface MoneyCategory {
@@ -132,6 +148,15 @@ export interface StudioData {
   moneyCategories?: MoneyCategory[];
   cashOpenings?: CashOpening[];
   balanceOpenings?: CashOpening[];
+  projectBudgets?: ProjectBudget[];
+  paymentSchedules?: PaymentSchedule[];
+  selections?: Selection[];
+  changeOrders?: ChangeOrder[];
+  drawings?: Drawing[];
+  drawingHeads?: DrawingHead[];
+  purchaseOrders?: PurchaseOrder[];
+  snags?: Snag[];
+  handovers?: Handover[];
 }
 export const newStudio = (id: string, name: string): StudioData => ({
   id,
@@ -148,6 +173,15 @@ export const newStudio = (id: string, name: string): StudioData => ({
   moneyCategories: [],
   cashOpenings: [],
   balanceOpenings: [],
+  projectBudgets: [],
+  paymentSchedules: [],
+  selections: [],
+  changeOrders: [],
+  drawings: [],
+  drawingHeads: [],
+  purchaseOrders: [],
+  snags: [],
+  handovers: [],
 });
 export function demoStudio(): StudioData {
   const w = seed();
@@ -306,6 +340,37 @@ export function scopedStudio(
     cashOpenings: member.role === "owner" ? data.cashOpenings || [] : [],
     balanceOpenings: member.role === "owner" ? data.balanceOpenings || [] : [],
     invites: member.role === "owner" ? data.invites : [],
+    projectBudgets: member.role === "owner" ? data.projectBudgets || [] : [],
+    paymentSchedules:
+      member.role === "owner" || client
+        ? (data.paymentSchedules || []).filter(
+            (r) => allowed(r.projectId) && (!client || r.clientVisible),
+          )
+        : [],
+    changeOrders:
+      member.role === "owner" || client
+        ? (data.changeOrders || []).filter(
+            (r) => allowed(r.projectId) && (!client || r.clientVisible),
+          )
+        : [],
+    selections: (data.selections || []).filter(
+      (r) => allowed(r.projectId) && (!client || r.clientVisible),
+    ),
+    drawings: (data.drawings || []).filter(
+      (r) => allowed(r.projectId) && (!client || r.clientVisible),
+    ),
+    drawingHeads: (data.drawingHeads || []).filter(
+      (r) => allowed(r.projectId) && (!client || r.clientVisible),
+    ),
+    purchaseOrders: client
+      ? []
+      : (data.purchaseOrders || []).filter((r) => allowed(r.projectId)),
+    snags: (data.snags || []).filter(
+      (r) => allowed(r.projectId) && (!client || r.clientVisible),
+    ),
+    handovers: (data.handovers || []).filter(
+      (r) => allowed(r.projectId) && (!client || r.clientVisible),
+    ),
   };
 }
 export function taskProgress(tasks: StudioTask[]) {

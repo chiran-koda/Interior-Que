@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import { Button, Busy, Modal } from "./components";
 import { today } from "./model";
-import { lifecycle, type StudioProject } from "./studio-model";
+import { type StudioProject } from "./studio-model";
+import { projectTemplates } from "./project-operations";
 import "./project-dialog.css";
 
 export function ProjectDialog({
@@ -27,6 +28,8 @@ export function ProjectDialog({
   const [start, setStart] = useState(record?.start || today());
   const [end, setEnd] = useState(record?.end || "");
   const [error, setError] = useState("");
+  const [templateId, setTemplateId] = useState("basic");
+  const template = projectTemplates.find((t) => t.id === templateId)!;
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
   const disabled = busy || saving;
@@ -95,6 +98,23 @@ export function ProjectDialog({
         <div className="project-form-scroll">
           <fieldset disabled={disabled} className="project-form-layout">
             <div className="project-form-main">
+              {!record && (
+                <label className="project-field">
+                  <span>Start from a template</span>
+                  <select
+                    name="templateId"
+                    value={templateId}
+                    onChange={(e) => setTemplateId(e.target.value)}
+                  >
+                    {projectTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} · {t.tasks.length} tasks
+                      </option>
+                    ))}
+                  </select>
+                  <small>{template.description}</small>
+                </label>
+              )}
               <section
                 className="project-form-section"
                 aria-labelledby="project-details-title"
@@ -173,7 +193,7 @@ export function ProjectDialog({
                       type="date"
                       value={start}
                       onChange={(e) => setStart(e.target.value)}
-                    onBlur={(e) => setStart(e.target.value)}
+                      onBlur={(e) => setStart(e.target.value)}
                       required
                     />
                   </label>
@@ -186,7 +206,7 @@ export function ProjectDialog({
                       type="date"
                       value={end}
                       onChange={(e) => setEnd(e.target.value)}
-                    onBlur={(e) => setEnd(e.target.value)}
+                      onBlur={(e) => setEnd(e.target.value)}
                       required
                       min={start || undefined}
                       aria-invalid={dateError || undefined}
@@ -272,12 +292,14 @@ export function ProjectDialog({
               </p>
               {!record && (
                 <ol>
-                  {lifecycle.map((stage) => (
-                    <li key={stage}>
-                      <Check size={14} />
-                      {stage}
-                    </li>
-                  ))}
+                  {[...new Set(template.tasks.map((t) => t[1]))].map(
+                    (stage) => (
+                      <li key={stage}>
+                        <Check size={14} />
+                        {stage}
+                      </li>
+                    ),
+                  )}
                 </ol>
               )}
               <div className="project-guide-next">
@@ -287,7 +309,7 @@ export function ProjectDialog({
                 <p>
                   {record
                     ? "Use Team to manage who can see this project."
-                    : "Open Team to assign people, then adjust tasks and due dates to suit your plan."}
+                    : "Suggested task dates follow your start and handover dates. Open Team to assign people and adjust the plan."}
                 </p>
               </div>
             </aside>
@@ -303,7 +325,7 @@ export function ProjectDialog({
             <span>
               {record
                 ? "Changes update this project."
-                : "5 starter tasks included"}
+                : `${template.tasks.length} starter tasks included`}
             </span>
             <div className="project-form-buttons">
               <Button onClick={close} disabled={disabled}>

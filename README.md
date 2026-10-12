@@ -4,6 +4,23 @@ Project management for interior firms: owners, designers, supervisors and client
 
 App: [Interior Que](https://chiran-koda.github.io/Interior-Que/)
 
+## Interior firm project tools
+
+Open a project to use **Budget / Payments, Selections, Extras, Drawings, Orders, Snags and Handover**. Tools adapt to the signed-in role. Money provides a budget overview; Materials links directly to each project's supplier orders. New projects open their workspace after creation.
+
+- **Templates:** Simple project, 2BHK, 3BHK, villa, office and renovation. Suggested task dates are spread across the chosen start and handover dates. The owner can reassign and edit the tasks. Existing project checklists are preserved.
+- **Daily site reports:** One form for completed work, tomorrow's plan, shortages, blockers, worker count and up to four project photos. Reports have explicit client visibility. Drafts stay on the current device. Uploaded photos remain in the project even if the report is abandoned. Live uploads still require completing the existing R2 setup; reports can be posted without photos.
+- **Budgets and payment milestones:** Agreed value, expected cost, client collections, paid expenses, remaining collections and forecast margin. Approved variations increase agreed value. Milestones do not create money transactions; link income to a milestone in Money. Editing, relinking or unlinking the same receipt adjusts collections in one transaction. Editing a milestone preserves its current collections. Owner contributions and unrelated income are excluded from project client collections unless explicitly linked to a client milestone.
+- **Room selections:** Record specifications and an optional project photo, then choose an assigned reviewer. Reviewers approve or request changes with a comment. Recorded decisions are immutable; a revised choice gets a new request.
+- **Extra work:** The owner records scope, additional cost and days and requests an owner/client decision. Only approved extras affect the agreed value; no money is transferred or dates automatically changed. Staff do not receive these cost records.
+- **Drawing versions:** HTTPS links to files already hosted by the firm, grouped by room and title. Team members add private drafts; owners approve and share versions. Atomic version counters prevent duplicate versions. Approving a version atomically supersedes the previous approval. File hosting/sharing permissions are controlled at the linked host; this release does not upload drawing PDFs to R2.
+- **Purchase orders and deliveries:** Owners/designers record suppliers, quantities, rates and expected dates. Assigned supervisors record cumulative deliveries, with partial and complete status. Receipts across linked orders determine whether the planned material quantity is on site. Orders do not create expenses automatically.
+- **Snags and handover:** Any assigned user can report a snag; the owner assigns repairs. The team records repair evidence; the owner or reporting client verifies it. The owner can complete handover once all recorded snags are resolved and five checklist items are checked. Completed handovers are locked.
+
+New collections under `interiorQueCompanies/{companyId}`: `projectBudgets`, `paymentSchedules`, `selections`, `changeOrders`, `drawings`, `drawingHeads`, `purchaseOrders`, `snags` and `handovers`. Firestore rules enforce active membership, project access, role permissions, reviewer-only decisions and shared-photo references. Budgets are owner-only; shared payment schedules/variations are available to assigned clients; supplier orders stay internal. No external message is sent by these workflows.
+
+This release uses the existing development project's Firestore and Google authentication. It adds document reads/writes, listeners and indexes to existing Firestore usage; it does not enable Firebase Storage, Functions or a paid Firebase plan. Company photo quotas apply to R2 photo bytes, not Firestore document/index storage. All rules and workflow tests run locally before development deployment.
+
 ## Money workspace
 
 Company owners can filter income and expenses by project and month, view net totals and expense charts, record and edit transactions, and create, rename or archive categories. Archived categories retain their historical transactions. Income and expense type and project remain fixed on an existing transaction; amount, date, description, payment method and category can be corrected without creating a duplicate.
@@ -24,13 +41,13 @@ The Worker verifies Firebase ID tokens, active membership and project access on 
 
 Exact size, content hash and actual encoded dimensions are verified before storing an upload. Atomic reservations prevent concurrent uploads from exceeding quota. Finalization counts bytes once. Hourly cleanup releases abandoned reservations after 24 hours and removes their orphan objects. R2 is private, with `r2.dev` and public custom domains disabled.
 
-**Live R2 storage is awaiting setup. No Cloudflare subscription, bucket, Worker secrets or paid services were activated.** Until the public Worker URL is configured, the app clearly shows that company storage setup is pending. The demo can resize and save photos on the current device for UI verification.
+**Live R2 storage is awaiting completion of the manual setup.** The user has created a private development bucket and Worker in Cloudflare; the remaining service credentials, binding and public app connection have not been verified. This feature release does not enable paid services. Until the public Worker URL is configured, the app clearly shows that company storage setup is pending. The demo can resize and save photos on the current device for UI verification.
 
 Follow the complete [Cloudflare setup and Firebase billing guide](docs/CLOUDFLARE_SETUP.md). It covers owner approval before R2 checkout, a private bucket, a dedicated development service account, Worker secrets, deployment, GitHub Pages configuration and live acceptance checks.
 
 ## Company workflows and isolation
 
-Owners create studios and projects with a five-step checklist, invite people by Google email and assign projects. Designers and supervisors manage assigned tasks, materials, updates and approvals. Clients see assigned projects and published updates/photos/decisions. Money and membership management remain owner-only. Invitations are saved in the app; no email is sent automatically.
+Owners create studios and projects with a chosen template checklist, invite people by Google email and assign projects. Designers and supervisors manage assigned tasks, materials, updates and approvals. Clients see assigned projects and published updates/photos/decisions. Money and membership management remain owner-only. Invitations are saved in the app; no email is sent automatically.
 
 **DesignQuote and its Firebase authentication, data, rules and subscriptions are untouched.** Both the app configuration guard and photo Worker are restricted to `interior-que-development`. Future production integration requires a separate tested release. Shared authentication across websites and subscription billing are not implemented here.
 

@@ -48,6 +48,16 @@ import {
 } from "./components";
 import { Brand } from "./Brand";
 import { ProjectDialog } from "./ProjectDialog";
+import { DailyReport } from "./DailyReport";
+import {
+  templateTasks,
+  validateOperation,
+  applyOperation,
+  applyProjectPayment,
+  type OperationCollection,
+  type OperationRecord,
+} from "./project-operations";
+import type { OperationSave } from "./ProjectTools";
 import { loadDemoStudio, saveDemoStudio } from "./studio-store";
 import * as cloud from "./studio-cloud";
 import { PhotoCard, PhotoUploader, StorageMeter } from "./ProjectPhotos";
@@ -58,7 +68,6 @@ import {
   isOverdue,
   lifecycle,
   newStudio,
-  projectStarter,
   roleNames,
   scopedStudio,
   taskProgress,
@@ -73,6 +82,15 @@ const MoneyWorkspace = lazy(() =>
   import("./MoneyWorkspace").then((module) => ({
     default: module.MoneyWorkspace,
   })),
+);
+const ProjectTools = lazy(() =>
+  import("./ProjectTools").then((m) => ({ default: m.ProjectTools })),
+);
+const DecisionInbox = lazy(() =>
+  import("./ProjectTools").then((m) => ({ default: m.DecisionInbox })),
+);
+const FinanceOverview = lazy(() =>
+  import("./ProjectTools").then((m) => ({ default: m.FinanceOverview })),
 );
 
 type StudioPage =
@@ -97,6 +115,7 @@ type DialogKind =
   | "member"
   | "material";
 type CollectionKey =
+  | OperationCollection
   | "projects"
   | "tasks"
   | "updates"
@@ -160,6 +179,7 @@ export function StudioWorkspace({
   localRef.current = local;
   const [page, setPage] = useState<StudioPage>("Today");
   const [projectId, setProjectId] = useState("");
+  const [projectToolTab, setProjectToolTab] = useState("");
   const [query, setQuery] = useState("");
   const [taskFilter, setTaskFilter] = useState("My tasks");
   const [drawer, setDrawer] = useState(false);
@@ -243,9 +263,10 @@ export function StudioWorkspace({
   const data = scopedStudio(source, member);
   const owner = member.role === "owner",
     client = member.role === "client";
-  const navigate = (next: StudioPage, id = "") => {
+  const navigate = (next: StudioPage, id = "", tool = "") => {
     setPage(next);
     setProjectId(id);
+    setProjectToolTab(tool);
     setQuery("");
     setDrawer(false);
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -309,6 +330,41 @@ export function StudioWorkspace({
       }));
     else await cloud.patchRecord(data.id, key, id, changes);
   };
+  const saveOperation: OperationSave = (key, record) =>
+    run(async () => {
+      validateOperation(key, record);
+      if (!canAccessProject(member, record.projectId))
+        throw new Error("Choose an available project.");
+      if (demo) {
+        await persist((s) => applyOperation(s, key, record, member));
+        return;
+      }
+      if (key === "drawings") {
+        const drawing = record as import("./project-operations").Drawing;
+        if (drawing.version === 0) await cloud.createDrawing(data.id, drawing);
+        else await cloud.approveDrawing(data.id, drawing);
+      } else if (key === "purchaseOrders")
+        await cloud.saveOrder(
+          data.id,
+          record as import("./project-operations").PurchaseOrder,
+        );
+      else if (key === "paymentSchedules")
+        await cloud.savePaymentSchedule(
+          data.id,
+          record as import("./project-operations").PaymentSchedule,
+        );
+      else if (
+        (key === "selections" || key === "changeOrders") &&
+        (record as any).status !== "Awaiting decision"
+      )
+        await cloud.decideOperation(data.id, key, record as any, member.id);
+      else await save(key, record);
+    }, "Project record saved.");
+  const savePayment = (record: StudioData["payments"][number]) =>
+    run(async () => {
+      if (demo) await persist((s) => applyProjectPayment(s, record));
+      else await cloud.saveProjectPayment(data.id, record);
+    }, "Transaction saved.");
   const setTaskStatus = (task: StudioTask, status: StudioTask["status"]) =>
     run(
       async () => {
@@ -366,6 +422,14 @@ export function StudioWorkspace({
     (a) => a.status === "Awaiting decision",
   );
   const myDecisions = waiting.filter((a) => a.reviewerId === member.id);
+  const operationPending = [
+    ...(data.selections || []),
+    ...(data.changeOrders || []),
+  ].filter((r) => r.status === "Awaiting decision");
+  const decisionCount =
+    myDecisions.length +
+    operationPending.filter((r) => r.reviewerId === member.id).length;
+  const waitingCount = waiting.length + operationPending.length;
   const blockers = data.updates
     .filter((u) => u.blocker)
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -499,6 +563,39 @@ export function StudioWorkspace({
             </Badge>
           </div>
           <p>{u.summary}</p>
+          {u.workers !== undefined && (
+            <small>{u.workers} workers on site</small>
+          )}
+          {u.tomorrow && (
+            <div className="ops-note">
+              <b>Tomorrow’s plan</b>
+              <p>{u.tomorrow}</p>
+            </div>
+          )}
+          {u.shortages && (
+            <div className="ops-note">
+              <b>Materials needed</b>
+              <p>{u.shortages}</p>
+            </div>
+          )}
+          {!!u.photoIds?.length && (
+            <div className="ops-grid">
+              {u.photoIds.map((id) => {
+                const photo = data.files.find(
+                  (f) => f.id === id && f.projectId === u.projectId,
+                );
+                return photo ? (
+                  <PhotoCard
+                    key={id}
+                    photo={photo}
+                    company={data.id}
+                    project={projectName(u.projectId)}
+                    demo={demo}
+                  />
+                ) : null;
+              })}
+            </div>
+          )}
           {u.blocker && (
             <div className="blocker-note">
               <TriangleAlert size={16} />
@@ -637,8 +734,8 @@ export function StudioWorkspace({
                 <span>
                   {p === "Tasks" ? (owner ? "Team tasks" : "My tasks") : p}
                 </span>
-                {p === "Approvals" && myDecisions.length > 0 && (
-                  <b>{myDecisions.length}</b>
+                {p === "Approvals" && decisionCount > 0 && (
+                  <b>{decisionCount}</b>
                 )}
               </button>
             );
@@ -823,7 +920,7 @@ export function StudioWorkspace({
                       : owner
                         ? "Team open tasks"
                         : "My open tasks",
-                    value: client ? myDecisions.length : myTasks.length,
+                    value: client ? decisionCount : myTasks.length,
                     text: client
                       ? "Review and respond"
                       : "Pick up your next task",
@@ -839,7 +936,7 @@ export function StudioWorkspace({
                   },
                   {
                     label: client ? "Shared photos" : "Awaiting approval",
-                    value: client ? data.files.length : waiting.length,
+                    value: client ? data.files.length : waitingCount,
                     text: client
                       ? "View photos shared by your team"
                       : "See what needs a decision",
@@ -848,7 +945,11 @@ export function StudioWorkspace({
                 ].map((s) => (
                   <button
                     key={s.label}
-                    className={s.label === "Overdue tasks" && s.value > 0 ? "summary-overdue" : undefined}
+                    className={
+                      s.label === "Overdue tasks" && s.value > 0
+                        ? "summary-overdue"
+                        : undefined
+                    }
                     onClick={() => {
                       navigate(s.target as StudioPage);
                       if (s.label === "Overdue tasks") setTaskFilter("Overdue");
@@ -865,6 +966,16 @@ export function StudioWorkspace({
                   </button>
                 ))}
               </div>
+              <Suspense fallback={null}>
+                <DecisionInbox
+                  data={data}
+                  member={member}
+                  demo={demo}
+                  busy={busy}
+                  onSave={saveOperation}
+                  onlyMine
+                />
+              </Suspense>
               <div className="studio-today-intro">
                 <div>
                   <span className="eyebrow">TODAY, MADE SIMPLE</span>
@@ -895,7 +1006,7 @@ export function StudioWorkspace({
                     </button>
                   </div>
                   {client ? (
-                    myDecisions.length ? (
+                    decisionCount ? (
                       approvalCards(myDecisions)
                     ) : (
                       <Empty
@@ -964,7 +1075,7 @@ export function StudioWorkspace({
                       text="Site updates will bring problems to everyone’s attention."
                     />
                   )}
-                  {!client && waiting.length > 0 && (
+                  {!client && waitingCount > 0 && (
                     <button
                       className="attention-row"
                       onClick={() => navigate("Approvals")}
@@ -974,8 +1085,8 @@ export function StudioWorkspace({
                       </span>
                       <div>
                         <b>
-                          {waiting.length} decision
-                          {waiting.length === 1 ? "" : "s"} awaiting review
+                          {waitingCount} decision
+                          {waitingCount === 1 ? "" : "s"} awaiting review
                         </b>
                         <small>
                           Keep material orders and site work moving.
@@ -1079,6 +1190,18 @@ export function StudioWorkspace({
                     </div>
                   </div>
                 </div>
+                <Suspense fallback={<Busy text="Opening project tools…" />}>
+                  <ProjectTools
+                    key={currentProject.id + member.role + projectToolTab}
+                    data={data}
+                    member={member}
+                    project={currentProject}
+                    demo={demo}
+                    busy={busy}
+                    onSave={saveOperation}
+                    initialTab={projectToolTab}
+                  />
+                </Suspense>
                 <div className="studio-two-columns">
                   <section className="studio-panel">
                     <div className="studio-section-heading">
@@ -1173,11 +1296,24 @@ export function StudioWorkspace({
           )}
           {page === "Approvals" && (
             <>
+              <Suspense fallback={<Busy text="Opening decisions…" />}>
+                <DecisionInbox
+                  data={{
+                    ...data,
+                    selections: projectRecords(data.selections || []),
+                    changeOrders: projectRecords(data.changeOrders || []),
+                  }}
+                  member={member}
+                  demo={demo}
+                  busy={busy}
+                  onSave={saveOperation}
+                />
+              </Suspense>
               <div className="studio-info">
                 <CheckCircle2 size={18} />
-                {myDecisions.length} decision
-                {myDecisions.length === 1 ? "" : "s"} awaiting your review.
-                Approvals stay with the project.
+                {decisionCount} decision
+                {decisionCount === 1 ? "" : "s"} awaiting your review. Approvals
+                stay with the project.
               </div>
               <div className="studio-approval-grid">
                 {approvalCards(
@@ -1186,7 +1322,7 @@ export function StudioWorkspace({
                     .sort((a, b) => a.status.localeCompare(b.status)),
                 )}
               </div>
-              {!data.approvals.length && (
+              {!data.approvals.length && !operationPending.length && (
                 <Empty
                   title="No approval requests yet"
                   text={
@@ -1215,6 +1351,28 @@ export function StudioWorkspace({
           )}
           {page === "Materials" && !client && (
             <section className="studio-panel">
+              <div className="ops-section-heading">
+                <div>
+                  <h2>Supplier orders & deliveries</h2>
+                  <p className="ops-help">
+                    Open a project’s orders to track quantities and supplier
+                    deliveries.
+                  </p>
+                </div>
+                <div className="ops-actions">
+                  {(projectId
+                    ? data.projects.filter((p) => p.id === projectId)
+                    : data.projects
+                  ).map((p) => (
+                    <Button
+                      key={p.id}
+                      onClick={() => navigate("Projects", p.id, "Orders")}
+                    >
+                      {p.name} orders
+                    </Button>
+                  ))}
+                </div>
+              </div>
               <div className="studio-info">
                 Plan what the project needs. Move each item from “To order” to
                 “On site” when it arrives.
@@ -1290,9 +1448,7 @@ export function StudioWorkspace({
                 data={data}
                 query={query}
                 busy={busy}
-                onSave={(record) =>
-                  run(() => save("payments", record), "Transaction saved.")
-                }
+                onSave={savePayment}
                 onCategory={(record) =>
                   run(() => save("moneyCategories", record), "Category saved.")
                 }
@@ -1302,6 +1458,10 @@ export function StudioWorkspace({
                     "Opening balance saved.",
                   )
                 }
+              />
+              <FinanceOverview
+                data={data}
+                onOpen={(id) => navigate("Projects", id, "Budget")}
               />
             </Suspense>
           )}
@@ -1464,7 +1624,20 @@ export function StudioWorkspace({
           onUploaded={() => setPhotoRefresh((n) => n + 1)}
         />
       )}
-      {dialog && dialog.kind !== "file" && (
+      {dialog?.kind === "update" && !client && (
+        <DailyReport
+          data={data}
+          member={member}
+          projectId={projectId}
+          demo={demo}
+          busy={busy}
+          onSave={(r) => run(() => save("updates", r), "Site report posted.")}
+          onDemoPhoto={(photo) => save("files", photo)}
+          onUploaded={() => setPhotoRefresh((n) => n + 1)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog && dialog.kind !== "file" && dialog.kind !== "update" && (
         <StudioDialog
           kind={dialog.kind}
           record={dialog.record}
@@ -1509,7 +1682,11 @@ export function StudioWorkspace({
                   };
                   if (dialog.record) await save("projects", p);
                   else {
-                    const tasks = projectStarter(id, member.id, p.end);
+                    const tasks = templateTasks(
+                      f("templateId") || "basic",
+                      p,
+                      member.id,
+                    );
                     if (demo)
                       await persist((s) => ({
                         ...s,
@@ -1647,7 +1824,11 @@ export function StudioWorkspace({
                 ? "Invitation saved. Copy the join link from Team and share it with this person."
                 : "Saved to the project.",
             );
-            if (ok) setDialog(null);
+            if (ok) {
+              setDialog(null);
+              if (kind === "project" && !dialog.record)
+                navigate("Projects", id);
+            }
             return ok;
           }}
         />

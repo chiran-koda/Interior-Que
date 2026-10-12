@@ -4,25 +4,141 @@
       "collectionGroup": "updates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "projectId", "order": "ASCENDING" },
-        { "fieldPath": "clientVisible", "order": "ASCENDING" }
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "clientVisible",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "approvals",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "projectId", "order": "ASCENDING" },
-        { "fieldPath": "clientVisible", "order": "ASCENDING" }
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "clientVisible",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "files",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "projectId", "order": "ASCENDING" },
-        { "fieldPath": "clientVisible", "order": "ASCENDING" }
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "clientVisible",
+          "order": "ASCENDING"
+        }
       ]
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "selections"
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "changeOrders"
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "drawings"
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "drawingHeads"
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "snags"
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "handovers"
+    },
+    {
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        }
+      ],
+      "collectionGroup": "paymentSchedules"
     }
   ],
   "fieldOverrides": []

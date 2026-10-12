@@ -1,0 +1,330 @@
+.project-tools {
+  margin-top: 22px;
+}
+.project-tools .studio-section-heading p,
+.ops-help,
+.ops-card small,
+.ops-list-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.ops-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 5px 2px 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.ops-tabs button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #f4f5fb;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.ops-tabs button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow-accent-btn);
+}
+.ops-tabs span {
+  margin-left: 7px;
+  font-size: 11px;
+}
+.ops-section-heading,
+.ops-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.ops-section-heading {
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.ops-section-heading h3,
+.ops-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+.ops-help {
+  margin: 12px 0 18px;
+}
+.ops-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.ops-card {
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ops-card > p {
+  margin: 12px 0;
+}
+.ops-card > small {
+  display: block;
+  margin: 12px 0;
+}
+.ops-card-heading {
+  align-items: start;
+  flex-wrap: wrap;
+}
+.ops-card-heading small {
+  display: block;
+  margin-bottom: 7px;
+}
+.ops-cost {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  margin: 15px 0;
+  flex-wrap: wrap;
+}
+.ops-cost strong {
+  font-size: 22px;
+  color: var(--accent-dark);
+}
+.ops-cost span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ops-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.ops-note {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--indigo-tint);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 14px;
+}
+.ops-photo {
+  margin: 15px 0;
+}
+.ops-photo .studio-file {
+  padding: 0;
+  display: block;
+}
+.ops-photo .photo-preview {
+  height: 150px;
+}
+.ops-photo .photo-card > div {
+  padding: 12px;
+}
+.ops-photo .photo-card h3 {
+  font-size: 13px;
+}
+.ops-inbox {
+  margin: 20px 0;
+}
+.ops-inbox > h2 {
+  font-size: 17px;
+  margin-bottom: 18px;
+}
+.ops-list-row {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  width: 100%;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  flex-wrap: wrap;
+}
+.ops-list-row:last-child {
+  border-bottom: 0;
+}
+.ops-list-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ops-list-row small {
+  display: block;
+  margin-top: 7px;
+}
+.ops-list-row strong {
+  font-size: 15px;
+}
+.ops-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.ops-metrics > div {
+  padding: 16px;
+  background: #f5f6fb;
+  border-radius: 18px;
+  min-width: 0;
+}
+.ops-metrics span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ops-metrics strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 22px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  color: var(--accent-dark);
+}
+.ops-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 18px 0;
+}
+.ops-filter select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.ops-check {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 0;
+}
+.ops-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.ops-details {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.ops-details summary {
+  min-height: 30px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.handover-pane > .field {
+  margin: 18px 0;
+}
+.handover-pane .field :is(input, textarea) {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #b9bdcd;
+  border-radius: 10px;
+  padding: 12px;
+}
+.ops-form {
+  overflow-wrap: anywhere;
+}
+.daily-report-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+.report-photos {
+  padding: 24px;
+  background: #f5f6fb;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+.report-photos h3 {
+  font-size: 16px;
+}
+.report-photos > p {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 9px;
+}
+.report-photos .photo-upload-body {
+  padding: 18px 0 0;
+}
+.report-photos .photo-upload-body > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.report-photos .photo-drop input {
+  width: 100%;
+  min-width: 0;
+}
+.report-photos .photo-upload-list article {
+  flex-wrap: wrap;
+}
+.report-photos .photo-upload-list img {
+  width: 48px;
+  height: 48px;
+}
+.report-photos .photo-drop {
+  padding: 18px 12px;
+}
+.report-photo-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.report-photo-strip .photo-preview {
+  height: 130px;
+}
+.report-photo-strip .studio-file {
+  display: block;
+  padding: 12px;
+}
+@media (max-width: 800px) {
+  .ops-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ops-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .daily-report-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report-photos {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+@media (max-width: 450px) {
+  .ops-card {
+    padding: 16px;
+  }
+  .ops-metrics strong {
+    font-size: 18px;
+  }
+  .ops-list-row {
+    align-items: start;
+  }
+  .ops-cost strong {
+    font-size: 20px;
+  }
+  .ops-card .badge {
+    font-size: 11px;
+  }
+  .report-photos {
+    padding: 20px;
+  }
+}

@@ -29,6 +29,500 @@ const member = (id: string, role: string, projects = ["p1"]) => ({
   active: true,
 });
 
+describe("Interior firm project tools", () => {
+  const budget = {
+    projectId: "p1",
+    contractValue: 1000,
+    costBudget: 700,
+    quotationRef: "Q1",
+  };
+  const schedule = {
+    projectId: "p1",
+    title: "Advance",
+    amount: 300,
+    received: 0,
+    due: "2026-10-15",
+    clientVisible: true,
+  };
+  const selection = {
+    projectId: "p1",
+    room: "Kitchen",
+    title: "Finish",
+    specification: "Oak",
+    photoId: "",
+    authorId: "designer",
+    reviewerId: "client",
+    due: "2026-10-15",
+    status: "Awaiting decision",
+    response: "",
+    clientVisible: true,
+  };
+  const extra = {
+    projectId: "p1",
+    title: "Extra cabinet",
+    description: "Storage",
+    amount: 100,
+    extraDays: 2,
+    authorId: "owner",
+    reviewerId: "client",
+    due: "2026-10-15",
+    status: "Awaiting decision",
+    response: "",
+    clientVisible: true,
+  };
+  const drawing = {
+    projectId: "p1",
+    groupId: "layout",
+    title: "Layout",
+    room: "Kitchen",
+    url: "https://example.com/layout.pdf",
+    version: 1,
+    authorId: "designer",
+    date: "2026-10-12",
+    status: "Draft",
+    clientVisible: false,
+  };
+  const head = {
+    projectId: "p1",
+    groupId: "layout",
+    nextVersion: 1,
+    currentId: "",
+    clientVisible: false,
+  };
+  const order = {
+    projectId: "p1",
+    materialId: "",
+    title: "Plywood",
+    supplier: "Supplier",
+    quantity: 20,
+    receivedQuantity: 0,
+    unit: "Sheets",
+    unitRate: 100,
+    due: "2026-10-15",
+    notes: "",
+    authorId: "designer",
+  };
+  const snag = {
+    projectId: "p1",
+    title: "Loose handle",
+    room: "Kitchen",
+    description: "Tighten",
+    photoId: "",
+    authorId: "client",
+    assigneeId: "",
+    due: "2026-10-15",
+    status: "Open",
+    resolution: "",
+    completionPhotoId: "",
+    clientVisible: true,
+  };
+  const handover = {
+    projectId: "p1",
+    checks: [false, false, false, false, false],
+    date: "2026-10-15",
+    notes: "",
+    completed: false,
+    clientVisible: true,
+  };
+  const createDrawing = async (id = "v1", version = 1) => {
+    const d = db("designer"),
+      batch = writeBatch(d);
+    batch.set(ref(d, `drawings/${id}`), { ...drawing, version });
+    if (version === 1) batch.set(ref(d, "drawingHeads/p1_layout"), head);
+    else
+      batch.update(ref(d, "drawingHeads/p1_layout"), { nextVersion: version });
+    await assertSucceeds(batch.commit());
+  };
+  const approveVersion = async (id: string, previous?: string) => {
+    const d = db("owner"),
+      batch = writeBatch(d);
+    if (previous)
+      batch.update(ref(d, `drawings/${previous}`), { status: "Superseded" });
+    batch.update(ref(d, `drawings/${id}`), {
+      status: "Approved",
+      clientVisible: true,
+    });
+    batch.update(ref(d, "drawingHeads/p1_layout"), {
+      currentId: id,
+      clientVisible: true,
+    });
+    await assertSucceeds(batch.commit());
+  };
+  it("restricts budgets to owners and schedules to owners or assigned shared clients", async () => {
+    await assertSucceeds(setDoc(ref(db("owner"), "projectBudgets/p1"), budget));
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "paymentSchedules/m1"), schedule),
+    );
+    await assertSucceeds(getDoc(ref(db("client"), "paymentSchedules/m1")));
+    for (const id of ["client", "designer", "supervisor", "outsider"]) {
+      await assertFails(getDoc(ref(db(id), "projectBudgets/p1")));
+      await assertFails(setDoc(ref(db(id), "projectBudgets/p1"), budget));
+      await assertFails(
+        updateDoc(ref(db(id), "paymentSchedules/m1"), { received: 100 }),
+      );
+    }
+    await assertFails(getDoc(ref(db("designer"), "paymentSchedules/m1")));
+    await assertFails(getDoc(ref(db("outsider"), "paymentSchedules/m1")));
+    await assertFails(setDoc(ref(db("owner"), "projectBudgets/p2"), budget));
+    await assertFails(
+      setDoc(ref(db("owner"), "paymentSchedules/negative"), {
+        ...schedule,
+        amount: -10,
+      }),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "paymentSchedules/private"), {
+        ...schedule,
+        clientVisible: false,
+      }),
+    );
+    await assertFails(getDoc(ref(db("client"), "paymentSchedules/private")));
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("client"), root, "paymentSchedules"),
+          where("projectId", "in", ["p1"]),
+          where("clientVisible", "==", true),
+        ),
+      ),
+    );
+  });
+  it("links only receipts from the same project to milestones and keeps journal writes private", async () => {
+    const d = db("owner");
+    await setDoc(ref(d, "paymentSchedules/m1"), schedule);
+    const receipt = {
+      projectId: "p1",
+      type: "Received",
+      description: "Advance",
+      amount: 100,
+      date: "2026-10-12",
+      milestoneId: "m1",
+    };
+    const batch = writeBatch(d);
+    batch.set(ref(d, "receipts/r1"), receipt);
+    batch.update(ref(d, "paymentSchedules/m1"), { received: 100 });
+    await assertSucceeds(batch.commit());
+    await assertFails(
+      setDoc(ref(d, "expenses/e1"), { ...receipt, type: "Spent" }),
+    );
+    await assertFails(
+      setDoc(ref(d, "receipts/r2"), { ...receipt, projectId: "p2" }),
+    );
+    await assertFails(
+      setDoc(ref(d, "receipts/r2"), { ...receipt, milestoneId: "missing" }),
+    );
+    await assertFails(setDoc(ref(db("client"), "receipts/r2"), receipt));
+    await assertFails(getDoc(ref(db("client"), "receipts/r1")));
+  });
+  it("allows only the assigned reviewer to make one immutable selection decision", async () => {
+    await assertSucceeds(
+      setDoc(ref(db("designer"), "selections/s1"), selection),
+    );
+    await assertSucceeds(getDoc(ref(db("client"), "selections/s1")));
+    await assertFails(
+      updateDoc(ref(db("owner"), "selections/s1"), { status: "Approved" }),
+    );
+    await assertFails(
+      updateDoc(ref(db("client"), "selections/s1"), {
+        status: "Approved",
+        specification: "Changed",
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("client"), "selections/s1"), {
+        status: "Changes requested",
+        response: "",
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("client"), "selections/s1"), {
+        status: "Changes requested",
+        response: "Use walnut",
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("client"), "selections/s1"), { status: "Approved" }),
+    );
+    await assertFails(
+      setDoc(ref(db("outsider"), "selections/s2"), {
+        ...selection,
+        authorId: "outsider",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(db("designer"), "selections/s2"), {
+        ...selection,
+        clientVisible: false,
+      }),
+    );
+    await assertFails(
+      setDoc(ref(db("designer"), "selections/s2"), {
+        ...selection,
+        reviewerId: "outsider",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(db("client"), "selections/s2"), {
+        ...selection,
+        authorId: "client",
+      }),
+    );
+  });
+  it("allows owner-created cost variations without revealing them to staff", async () => {
+    await assertSucceeds(setDoc(ref(db("owner"), "changeOrders/c1"), extra));
+    await assertFails(getDoc(ref(db("designer"), "changeOrders/c1")));
+    await assertFails(
+      setDoc(ref(db("designer"), "changeOrders/c2"), {
+        ...extra,
+        authorId: "designer",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(db("owner"), "changeOrders/c2"), {
+        ...extra,
+        reviewerId: "designer",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(db("owner"), "changeOrders/c2"), { ...extra, extraDays: 2.5 }),
+    );
+    await assertFails(
+      updateDoc(ref(db("client"), "changeOrders/c1"), {
+        amount: 0,
+        status: "Approved",
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("client"), "changeOrders/c1"), { status: "Approved" }),
+    );
+  });
+  it("blocks sharing private or cross-project photos through reports and selections", async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(ref(c.firestore(), "files/private"), {
+        projectId: "p1",
+        clientVisible: false,
+      });
+      await setDoc(ref(c.firestore(), "files/public"), {
+        projectId: "p1",
+        clientVisible: true,
+      });
+      await setDoc(ref(c.firestore(), "files/other"), {
+        projectId: "p2",
+        clientVisible: true,
+      });
+    });
+    const report = {
+      projectId: "p1",
+      authorId: "supervisor",
+      authorName: "Supervisor",
+      date: "2026-10-12",
+      room: "Kitchen",
+      summary: "Carpentry done",
+      tomorrow: "Paint",
+      shortages: "Handles",
+      blocker: "",
+      workers: 3,
+      photoIds: ["public"],
+      clientVisible: true,
+    };
+    await assertSucceeds(
+      setDoc(ref(db("supervisor"), "updates/report"), report),
+    );
+    await assertSucceeds(getDoc(ref(db("client"), "updates/report")));
+    for (const photoId of ["private", "other", "missing"]) {
+      await assertFails(
+        setDoc(ref(db("supervisor"), "updates/bad"), {
+          ...report,
+          photoIds: [photoId],
+        }),
+      );
+      await assertFails(
+        setDoc(ref(db("designer"), "selections/bad"), {
+          ...selection,
+          photoId,
+        }),
+      );
+    }
+    await assertFails(
+      setDoc(ref(db("supervisor"), "updates/bad"), { ...report, workers: -1 }),
+    );
+    await assertFails(
+      setDoc(ref(db("supervisor"), "updates/bad"), {
+        ...report,
+        photoIds: ["public", "public", "public", "public", "public"],
+      }),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("supervisor"), "updates/internal-report"), {
+        ...report,
+        photoIds: ["private"],
+        clientVisible: false,
+      }),
+    );
+    await assertFails(getDoc(ref(db("client"), "updates/internal-report")));
+  });
+  it("allocates unique drawing versions atomically and publishes one approved version", async () => {
+    await createDrawing();
+    await assertFails(getDoc(ref(db("client"), "drawings/v1")));
+    await assertFails(
+      setDoc(ref(db("designer"), "drawings/duplicate"), drawing),
+    );
+    await assertFails(
+      updateDoc(ref(db("designer"), "drawings/v1"), {
+        status: "Approved",
+        clientVisible: true,
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("owner"), "drawings/v1"), {
+        status: "Approved",
+        clientVisible: true,
+      }),
+    );
+    await approveVersion("v1");
+    await assertSucceeds(getDoc(ref(db("client"), "drawings/v1")));
+    await createDrawing("v2", 2);
+    const ownerDatabase = db("owner"),
+      invalid = writeBatch(ownerDatabase);
+    invalid.update(ref(ownerDatabase, "drawings/v2"), {
+      status: "Approved",
+      clientVisible: true,
+    });
+    invalid.update(ref(ownerDatabase, "drawingHeads/p1_layout"), {
+      currentId: "v2",
+    });
+    await assertFails(invalid.commit());
+    await approveVersion("v2", "v1");
+    expect((await getDoc(ref(db("owner"), "drawings/v1"))).data()?.status).toBe(
+      "Superseded",
+    );
+    expect(
+      (await getDoc(ref(db("owner"), "drawingHeads/p1_layout"))).data()
+        ?.currentId,
+    ).toBe("v2");
+    await assertFails(
+      updateDoc(ref(db("owner"), "drawings/v2"), {
+        url: "https://example.com/changed.pdf",
+      }),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("client"), root, "drawings"),
+          where("projectId", "in", ["p1"]),
+          where("clientVisible", "==", true),
+        ),
+      ),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("supervisor"), root, "drawingHeads"),
+          where("projectId", "in", ["p1"]),
+        ),
+      ),
+    );
+  });
+  it("limits orders to assigned staff and deliveries to valid cumulative quantities", async () => {
+    await assertSucceeds(
+      setDoc(ref(db("designer"), "purchaseOrders/o1"), order),
+    );
+    await assertFails(
+      setDoc(ref(db("supervisor"), "purchaseOrders/o2"), {
+        ...order,
+        authorId: "supervisor",
+      }),
+    );
+    await assertFails(getDoc(ref(db("client"), "purchaseOrders/o1")));
+    await assertFails(getDoc(ref(db("outsider"), "purchaseOrders/o1")));
+    await assertSucceeds(
+      updateDoc(ref(db("supervisor"), "purchaseOrders/o1"), {
+        receivedQuantity: 10,
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "purchaseOrders/o1"), {
+        receivedQuantity: 21,
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "purchaseOrders/o1"), {
+        receivedQuantity: 9,
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "purchaseOrders/o1"), { unitRate: 0 }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "purchaseOrders/o1"), { receivedQuantity: 9 }),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("supervisor"), root, "purchaseOrders"),
+          where("projectId", "==", "p1"),
+        ),
+      ),
+    );
+  });
+  it("requires team repair evidence and owner or reporting-client verification", async () => {
+    await assertSucceeds(setDoc(ref(db("client"), "snags/s1"), snag));
+    await assertFails(
+      setDoc(ref(db("client"), "snags/s2"), { ...snag, clientVisible: false }),
+    );
+    await assertFails(
+      setDoc(ref(db("client"), "snags/s2"), {
+        ...snag,
+        assigneeId: "designer",
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "snags/s1"), { assigneeId: "supervisor" }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "snags/s1"), { status: "Resolved" }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "snags/s1"), {
+        status: "Ready for check",
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("supervisor"), "snags/s1"), {
+        status: "Ready for check",
+        resolution: "Handle tightened",
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "snags/s1"), { status: "Resolved" }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("client"), "snags/s1"), { status: "Resolved" }),
+    );
+    await assertFails(
+      updateDoc(ref(db("owner"), "snags/s1"), { status: "Open" }),
+    );
+  });
+  it("keeps handover finalization owner-only, requires every check and locks completion", async () => {
+    await assertFails(setDoc(ref(db("supervisor"), "handovers/p1"), handover));
+    await assertSucceeds(setDoc(ref(db("owner"), "handovers/p1"), handover));
+    await assertSucceeds(getDoc(ref(db("client"), "handovers/p1")));
+    await assertFails(
+      updateDoc(ref(db("owner"), "handovers/p1"), { completed: true }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "handovers/p1"), {
+        completed: true,
+        checks: [true, true, true, true, true],
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("owner"), "handovers/p1"), { completed: false }),
+    );
+    await assertFails(getDoc(ref(db("outsider"), "handovers/p1")));
+  });
+});
+
 describe("Owner financial journals and configuration", () => {
   const expense = {
     projectId: "p1",
