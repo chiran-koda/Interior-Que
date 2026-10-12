@@ -203,6 +203,8 @@ export function watchStudio(
       | "approvals"
       | "files"
       | "invites"
+      | "moneyCategories"
+      | "cashOpenings"
     >,
     filters: any[] = [],
   ) => {
@@ -232,6 +234,8 @@ export function watchStudio(
       "approvals",
       "files",
       "invites",
+      "moneyCategories",
+      "cashOpenings",
     ] as const)
       listen(key);
     let expenses: any[] = [],
@@ -257,11 +261,7 @@ export function watchStudio(
     for (const key of (client
       ? ["updates", "approvals", "files"]
       : ["tasks", "materials", "updates", "approvals", "files"]) as (
-      | "tasks"
-      | "materials"
-      | "updates"
-      | "approvals"
-      | "files"
+      "tasks" | "materials" | "updates" | "approvals" | "files"
     )[])
       listen(key, [
         where("projectId", "in", ids),
@@ -281,9 +281,11 @@ type RecordCollection =
   | "files"
   | "payments"
   | "invites";
+// Owner-only financial configuration uses dedicated collections.
+type FinancialCollection = "moneyCategories" | "cashOpenings";
 export async function saveRecord(
   companyId: string,
-  key: RecordCollection,
+  key: RecordCollection | FinancialCollection,
   record: { id: string; [key: string]: any },
 ) {
   const { id, ...data } = record;
@@ -303,7 +305,7 @@ export async function saveRecord(
 }
 export async function patchRecord(
   companyId: string,
-  key: RecordCollection,
+  key: RecordCollection | FinancialCollection,
   id: string,
   changes: Record<string, unknown>,
 ) {

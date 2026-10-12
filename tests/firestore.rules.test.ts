@@ -28,6 +28,134 @@ const member = (id: string, role: string, projects = ["p1"]) => ({
   projectIds: projects,
   active: true,
 });
+
+describe("Owner financial journals and configuration", () => {
+  const expense = {
+    projectId: "p1",
+    description: "Materials",
+    amount: 12.5,
+    type: "Spent",
+    date: "2026-10-12",
+    mode: "Cash",
+    categoryId: "exp-materials",
+  };
+  const category = {
+    name: "Custom expenses",
+    type: "Spent",
+    color: "#4f46e5",
+    active: true,
+  };
+  const opening = { projectId: "p1", amount: 1000, date: "2026-10-01" };
+  it("lets the owner add categories and cash openings, hiding both from other roles", async () => {
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "moneyCategories/custom"), category),
+    );
+    await assertSucceeds(setDoc(ref(db("owner"), "cashOpenings/p1"), opening));
+    await assertSucceeds(getDoc(ref(db("owner"), "moneyCategories/custom")));
+    for (const id of ["client", "designer", "supervisor", "outsider"]) {
+      await assertFails(getDoc(ref(db(id), "moneyCategories/custom")));
+      await assertFails(getDoc(ref(db(id), "cashOpenings/p1")));
+      await assertFails(setDoc(ref(db(id), "cashOpenings/p1"), opening));
+    }
+  });
+  it("allows editing a legacy journal without making a second record", async () => {
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "expenses/payment"), {
+        amount: 120,
+        description: "Revised labour",
+        categoryId: "exp-labour",
+        mode: "Cash",
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("designer"), "expenses/payment"), { amount: 999 }),
+    );
+    await assertFails(
+      updateDoc(ref(db("owner"), "expenses/payment"), { type: "Received" }),
+    );
+    await assertFails(
+      updateDoc(ref(db("owner"), "expenses/payment"), { projectId: "p2" }),
+    );
+  });
+  it("validates amount, method, category type and unknown fields on financial writes", async () => {
+    await assertSucceeds(setDoc(ref(db("owner"), "expenses/new"), expense));
+    for (const change of [
+      { amount: -1 },
+      { amount: 1000000001 },
+      { mode: "Invalid" },
+      { date: "2026-99-12" },
+      { categoryId: "inc-client" },
+      { categoryId: "missing" },
+      { unexpected: true },
+    ])
+      await assertFails(
+        setDoc(ref(db("owner"), "expenses/bad"), { ...expense, ...change }),
+      );
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "moneyCategories/custom"), category),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "expenses/custom"), {
+        ...expense,
+        categoryId: "custom",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(db("owner"), "receipts/custom"), {
+        ...expense,
+        type: "Received",
+        categoryId: "custom",
+      }),
+    );
+  });
+  it("renames and archives categories without reclassifying existing records", async () => {
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "moneyCategories/custom"), category),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "expenses/custom"), {
+        ...expense,
+        categoryId: "custom",
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "moneyCategories/custom"), {
+        name: "Renamed",
+        active: false,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "expenses/custom"), { amount: 14 }),
+    );
+    await assertFails(
+      updateDoc(ref(db("owner"), "moneyCategories/custom"), {
+        type: "Received",
+      }),
+    );
+  });
+  it("bounds opening balances to their project and rejects invalid configuration", async () => {
+    await assertSucceeds(setDoc(ref(db("owner"), "cashOpenings/p1"), opening));
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "cashOpenings/p1"), { amount: 0 }),
+    );
+    await assertFails(setDoc(ref(db("owner"), "cashOpenings/p2"), opening));
+    await assertFails(
+      setDoc(ref(db("owner"), "cashOpenings/p1"), { ...opening, amount: -1 }),
+    );
+    await assertFails(
+      setDoc(ref(db("owner"), "moneyCategories/bad"), {
+        ...category,
+        color: "url(evil)",
+      }),
+    );
+    await assertFails(
+      setDoc(
+        doc(db("owner"), "interiorQueCompanies/other/cashOpenings/p1"),
+        opening,
+      ),
+    );
+  });
+});
 const project = {
   name: "Home",
   clientName: "Client",
@@ -394,11 +522,22 @@ describe("Invitations and data validation", () => {
     };
     await assertFails(setDoc(ref(d, "files/good"), file));
     await assertFails(setDoc(ref(db("owner"), "files/good"), file));
-    await assertFails(setDoc(ref(db("owner"), "photoStorage/current"), {usedBytes:0, quotaBytes:9999999999}));
+    await assertFails(
+      setDoc(ref(db("owner"), "photoStorage/current"), {
+        usedBytes: 0,
+        quotaBytes: 9999999999,
+      }),
+    );
     await assertFails(setDoc(ref(d, "photoUploads/invented"), file));
-    await env.withSecurityRulesDisabled(async context => setDoc(ref(context.firestore(), "files/server-photo"), file));
+    await env.withSecurityRulesDisabled(async (context) =>
+      setDoc(ref(context.firestore(), "files/server-photo"), file),
+    );
     await assertSucceeds(getDoc(ref(db("client"), "files/server-photo")));
-    await assertFails(updateDoc(ref(db("client"), "files/server-photo"), {clientVisible:false}));
+    await assertFails(
+      updateDoc(ref(db("client"), "files/server-photo"), {
+        clientVisible: false,
+      }),
+    );
     await assertFails(
       setDoc(ref(d, "files/bad"), {
         ...file,

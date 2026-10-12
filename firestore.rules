@@ -77,8 +77,22 @@ service cloud.firestore {
    }
    match /{journal}/{payment} {
     function validJournal(){return journal in ['expenses','receipts'];}
+    function validCategory(data){return !('categoryId' in data) || (text(data.categoryId,100) && (data.categoryId in (journal == 'expenses' ? ['exp-materials','exp-labour','exp-salaries','exp-transport','exp-electrical','exp-food','exp-other'] : ['inc-client','inc-capital','inc-other']) || (exists(/databases/$(database)/documents/interiorQueCompanies/$(company)/moneyCategories/$(data.categoryId)) && get(/databases/$(database)/documents/interiorQueCompanies/$(company)/moneyCategories/$(data.categoryId)).data.type == data.type)));}
+    function validPayment(data){return data.keys().hasOnly(['projectId','description','amount','type','date','categoryId','mode']) && text(data.projectId,100) && projectExists(company,data.projectId) && text(data.description,500) && data.description.size()>0 && data.amount is number && data.amount>0 && data.amount<=1000000000 && data.type == (journal == 'expenses' ? 'Spent' : 'Received') && text(data.date,10) && data.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$') && (!('mode' in data) || data.mode in ['Cash','Bank transfer','UPI','Cheque','Other','Unspecified']) && validCategory(data);}
     allow read: if validJournal() && owner(company);
-    allow create: if validJournal() && owner(company) && request.resource.data.keys().hasOnly(['projectId','description','amount','type','date']) && projectExists(company,request.resource.data.projectId) && text(request.resource.data.description,500) && request.resource.data.amount is number && request.resource.data.amount>0 && request.resource.data.type == (journal == 'expenses' ? 'Spent' : 'Received') && text(request.resource.data.date,10);
+    allow create: if validJournal() && owner(company) && validPayment(request.resource.data);
+    allow update: if validJournal() && owner(company) && request.resource.data.projectId == resource.data.projectId && request.resource.data.type == resource.data.type && validPayment(request.resource.data);
+   }
+   match /moneyCategories/{category} {
+    function validCategory(data){return data.keys().hasOnly(['name','type','color','active']) && text(data.name,60) && data.name.size()>0 && data.type in ['Received','Spent'] && data.color is string && data.color.matches('^#[0-9a-fA-F]{6}$') && data.active is bool;}
+    allow read: if owner(company);
+    allow create: if owner(company) && validCategory(request.resource.data);
+    allow update: if owner(company) && validCategory(request.resource.data) && request.resource.data.type == resource.data.type;
+   }
+   match /cashOpenings/{opening} {
+    function validOpening(data){return data.keys().hasOnly(['projectId','amount','date']) && data.projectId == opening && projectExists(company,data.projectId) && data.amount is number && data.amount>=0 && data.amount<=1000000000 && text(data.date,10) && data.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');}
+    allow read: if owner(company);
+    allow create, update: if owner(company) && validOpening(request.resource.data);
    }
   }
  }

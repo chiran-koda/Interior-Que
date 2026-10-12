@@ -4,6 +4,14 @@ Project management for interior firms: owners, designers, supervisors and client
 
 App: [Interior Que](https://chiran-koda.github.io/Interior-Que/)
 
+## Money workspace
+
+Company owners can filter income and expenses by project and month, view net totals and expense charts, record and edit transactions, and create, rename or archive categories. Archived categories retain their historical transactions. Income and expense type and project remain fixed on an existing transaction; amount, date, description, payment method and category can be corrected without creating a duplicate.
+
+Cash on hand uses a project opening cash balance plus cash receipts minus cash expenses from the opening date through the selected month end. Opening cash means the amount before transactions on that date. Bank, UPI, cheque and unspecified methods are excluded. All-project cash is shown only after every selected project has an opening balance, avoiding a misleading partial total. Legacy transactions remain unchanged and can be classified by the owner; missing expense categories appear as Other expenses and unknown payment methods do not enter cash totals.
+
+Receipt sharing opens a reviewed WhatsApp draft. The owner chooses the recipient and sends it in WhatsApp; no message is sent automatically. Financial journals, categories and opening balances are readable and writable only by an active company owner in the isolated development Firebase project. Categories use `moneyCategories/{id}` and openings use `cashOpenings/{projectId}`. No DesignQuote data or production rules are changed.
+
 ## Project photos
 
 The unfinished Google Drive integration and its earlier personal-workspace entry point have been removed. Google authentication requests no Drive scope. No files need migration.

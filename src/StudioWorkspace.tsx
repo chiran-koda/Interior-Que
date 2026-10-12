@@ -3,6 +3,8 @@ import {
   useEffect,
   useRef,
   useState,
+  lazy,
+  Suspense,
   type FormEvent,
 } from "react";
 import {
@@ -66,6 +68,12 @@ import {
   type StudioTask,
 } from "./studio-model";
 
+const MoneyWorkspace = lazy(() =>
+  import("./MoneyWorkspace").then((module) => ({
+    default: module.MoneyWorkspace,
+  })),
+);
+
 type StudioPage =
   | "Today"
   | "Projects"
@@ -96,7 +104,9 @@ type CollectionKey =
   | "payments"
   | "invites"
   | "members"
-  | "materials";
+  | "materials"
+  | "moneyCategories"
+  | "cashOpenings";
 const pageIcons = {
   Today: Home,
   Projects: Layers,
@@ -279,7 +289,7 @@ export function StudioWorkspace({
     if (demo)
       await persist((s) => ({
         ...s,
-        [key]: [record, ...s[key].filter((r) => r.id !== record.id)],
+        [key]: [record, ...(s[key] || []).filter((r) => r.id !== record.id)],
       }));
     else await cloud.saveRecord(data.id, key, record);
   };
@@ -291,7 +301,9 @@ export function StudioWorkspace({
     if (demo)
       await persist((s) => ({
         ...s,
-        [key]: s[key].map((r) => (r.id === id ? { ...r, ...changes } : r)),
+        [key]: (s[key] || []).map((r) =>
+          r.id === id ? { ...r, ...changes } : r,
+        ),
       }));
     else await cloud.patchRecord(data.id, key, id, changes);
   };
@@ -497,7 +509,9 @@ export function StudioWorkspace({
         </article>
       ));
   const fileCards = projectRecords(data.files)
-    .filter((f) => matches([projectName(f.projectId), f.name, f.room, f.caption].join(" ")))
+    .filter((f) =>
+      matches([projectName(f.projectId), f.name, f.room, f.caption].join(" ")),
+    )
     .map((photo) => (
       <PhotoCard
         key={photo.id}
@@ -563,7 +577,6 @@ export function StudioWorkspace({
         "Site updates": { label: "Post site update", kind: "update" },
         Materials: { label: "Add material", kind: "material" },
         Photos: { label: "Upload photos", kind: "file" },
-        Money: { label: "Record transaction", kind: "payment" },
         Team: { label: "Invite someone", kind: "invite" },
       }
     : client
@@ -1269,63 +1282,22 @@ export function StudioWorkspace({
             </>
           )}
           {page === "Money" && owner && (
-            <>
-              <div className="studio-summary">
-                {[
-                  ["Receipts", "Received"],
-                  ["Expenses", "Spent"],
-                ].map(([label, type]) => (
-                  <div className="money-summary" key={type}>
-                    <span>{label}</span>
-                    <b>
-                      {money(
-                        data.payments
-                          .filter((p) => p.type === type)
-                          .reduce((sum, p) => sum + p.amount, 0),
-                      )}
-                    </b>
-                    <small>Recorded transactions</small>
-                  </div>
-                ))}
-                <div className="money-summary">
-                  <span>Cash balance</span>
-                  <b>
-                    {money(
-                      data.payments.reduce(
-                        (sum, p) =>
-                          sum + (p.type === "Received" ? p.amount : -p.amount),
-                        0,
-                      ),
-                    )}
-                  </b>
-                  <small>Receipts minus expenses</small>
-                </div>
-              </div>
-              <section className="studio-panel">
-                {projectRecords(data.payments)
-                  .filter((p) => matches(p.description))
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .map((p) => (
-                    <div className="studio-task-row" key={p.id}>
-                      <Wallet size={20} />
-                      <div>
-                        <b>{p.description}</b>
-                        <small>
-                          {projectName(p.projectId)} · {dateLabel(p.date)}
-                        </small>
-                      </div>
-                      <Badge>{p.type}</Badge>
-                      <strong>{money(p.amount)}</strong>
-                    </div>
-                  ))}
-                {!data.payments.length && (
-                  <Empty
-                    title="Record the first transaction"
-                    text="Track receipts and expenses as they happen."
-                  />
-                )}
-              </section>
-            </>
+            <Suspense fallback={<Busy text="Opening your money workspace…" />}>
+              <MoneyWorkspace
+                data={data}
+                query={query}
+                busy={busy}
+                onSave={(record) =>
+                  run(() => save("payments", record), "Transaction saved.")
+                }
+                onCategory={(record) =>
+                  run(() => save("moneyCategories", record), "Category saved.")
+                }
+                onOpening={(record) =>
+                  run(() => save("cashOpenings", record), "Opening cash saved.")
+                }
+              />
+            </Suspense>
           )}
           {page === "Team" && owner && (
             <>

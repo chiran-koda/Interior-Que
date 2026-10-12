@@ -84,6 +84,21 @@ export interface StudioPayment {
   amount: number;
   type: "Received" | "Spent";
   date: string;
+  categoryId?: string;
+  mode?: "Cash" | "Bank transfer" | "UPI" | "Cheque" | "Other" | "Unspecified";
+}
+export interface MoneyCategory {
+  id: string;
+  name: string;
+  type: StudioPayment["type"];
+  color: string;
+  active: boolean;
+}
+export interface CashOpening {
+  id: string;
+  projectId: string;
+  amount: number;
+  date: string;
 }
 export interface StudioMaterial {
   id: string;
@@ -114,6 +129,8 @@ export interface StudioData {
   payments: StudioPayment[];
   materials: StudioMaterial[];
   invites: StudioInvite[];
+  moneyCategories?: MoneyCategory[];
+  cashOpenings?: CashOpening[];
 }
 export const newStudio = (id: string, name: string): StudioData => ({
   id,
@@ -127,6 +144,8 @@ export const newStudio = (id: string, name: string): StudioData => ({
   payments: [],
   materials: [],
   invites: [],
+  moneyCategories: [],
+  cashOpenings: [],
 });
 export function demoStudio(): StudioData {
   const w = seed();
@@ -194,6 +213,15 @@ export function demoStudio(): StudioData {
       type: t.type,
       date: t.date,
       description: t.description,
+      mode:
+        t.mode === "Cash"
+          ? "Cash"
+          : t.mode === "UPI"
+            ? "UPI"
+            : t.mode === "Cheque"
+              ? "Cheque"
+              : "Bank transfer",
+      categoryId: t.type === "Received" ? "inc-client" : "exp-materials",
     })),
     updates: [
       {
@@ -272,6 +300,8 @@ export function scopedStudio(
       (f) => allowed(f.projectId) && (!client || f.clientVisible),
     ),
     payments: member.role === "owner" ? data.payments : [],
+    moneyCategories: member.role === "owner" ? data.moneyCategories || [] : [],
+    cashOpenings: member.role === "owner" ? data.cashOpenings || [] : [],
     invites: member.role === "owner" ? data.invites : [],
   };
 }
