@@ -272,6 +272,25 @@ body :is(.studio-app, .studio-gate, .modal) :is(input, textarea)::placeholder {
   background: var(--danger-tint);
   position: relative;
 }
+.studio-app .studio-summary > button > span {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  gap: 10px;
+}
+.studio-app .studio-summary > button > span > svg {
+  color: var(--accent-dark);
+}
+.studio-app .studio-summary > button.summary-overdue > span {
+  color: var(--danger);
+}
+@media (max-width: 540px) {
+  .studio-app .studio-summary > button > span {
+    font-size: 14px;
+    min-height: 41px;
+  }
+}
 .studio-app .summary-overdue b,
 .studio-app .due-date.overdue {
   color: var(--danger);
