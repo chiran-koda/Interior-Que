@@ -175,7 +175,6 @@ body :is(.studio-app, .studio-gate, .modal) :is(h1, h2, h3) {
   white-space: nowrap;
 }
 body :is(.studio-app, .studio-gate, .modal) :is(button, .btn) {
-  border-radius: 999px;
   min-width: 44px;
   min-height: 44px;
   transition:
@@ -184,11 +183,26 @@ body :is(.studio-app, .studio-gate, .modal) :is(button, .btn) {
     background-color 150ms ease;
 }
 body :is(.studio-app, .studio-gate, .modal) .btn {
+  border-radius: 999px;
   border-color: var(--border);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-chip);
   font-weight: 700;
+}
+/* Shape follows purpose: content cards are rectangles, action controls pills. */
+body :is(.studio-app, .studio-gate, .modal) .icon-btn {
+  border-radius: 50%;
+}
+.studio-app .attention-row {
+  border-radius: 12px;
+}
+.studio-app .photo-preview {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.modal .project-date-tools button {
+  border-radius: 999px;
 }
 body :is(.studio-app, .studio-gate, .modal) .btn.primary {
   background: var(--accent);
@@ -341,6 +355,7 @@ body :is(.studio-app, .studio-gate, .modal) :is(input, textarea)::placeholder {
   color: #d0d2e9;
 }
 .studio-app .studio-sidebar nav > button {
+  border-radius: 999px;
   color: #e8e9fa;
 }
 .studio-app .studio-sidebar nav > button:hover {
@@ -435,6 +450,7 @@ body :is(.studio-app, .studio-gate, .modal) .empty-symbol {
   font-size: 12px;
 }
 .studio-app .studio-filters button {
+  border-radius: 999px;
   color: var(--text-muted);
   background: var(--surface);
   box-shadow: var(--shadow-chip);
@@ -466,6 +482,128 @@ body :is(.studio-app, .studio-gate, .modal) .empty-symbol {
   background: var(--success-gradient);
   border-color: transparent;
   color: #fff;
+}
+/* Task controls use explicit grid positions so Edit cannot create a third row. */
+.studio-app .studio-task-row:has(> .task-check) {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-areas: "check content due" ". status edit";
+  gap: 10px 12px;
+  align-items: start;
+}
+.studio-app .studio-task-row > .task-check {
+  grid-area: check;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+.studio-app .studio-task-row > .task-check::before {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid #818699;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.studio-app .studio-task-row > .task-check::after {
+  display: none;
+}
+.studio-app .studio-task-row > .task-check > svg {
+  position: relative;
+  color: #fff;
+}
+.studio-app .studio-task-row.done > .task-check::before {
+  background: var(--success-gradient);
+  border-color: transparent;
+}
+.studio-app .studio-task-row:has(> .task-check) > div {
+  grid-area: content;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.studio-app .studio-task-row:has(> .task-check) > .due-date {
+  grid-area: due;
+  padding-top: 4px;
+  white-space: nowrap;
+}
+.studio-app .studio-task-row:has(> .task-check) > select {
+  grid-area: status;
+  min-height: 44px;
+  max-width: 100%;
+  width: 130px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.studio-app .studio-task-row:has(> .task-check) > .studio-task-edit {
+  grid-area: edit;
+  align-self: center;
+  border-radius: 10px;
+}
+/* Financial values need the card width rather than the space beside an icon. */
+.studio-app .money-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-content: start;
+  row-gap: 8px;
+}
+.studio-app .money-card > div {
+  display: contents;
+}
+.studio-app .money-card-icon {
+  grid-column: 1;
+  grid-row: 1;
+}
+.studio-app .money-card > div > span {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+.studio-app .money-card :is(strong, small, .money-text-button) {
+  grid-column: 1 / -1;
+}
+.studio-app .money-card strong {
+  font-size: 24px;
+  letter-spacing: -0.65px;
+  margin: 4px 0;
+}
+.studio-app .money-toolbar input[type="month"] {
+  width: 190px;
+  max-width: 100%;
+}
+.modal .studio-form {
+  padding: 24px;
+}
+.modal .studio-form .form-grid {
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.modal .studio-form .form-grid > .field {
+  margin-bottom: 0;
+}
+@media (max-width: 600px) {
+  .studio-app .studio-task-row:has(> .task-check) {
+    grid-template-areas: "check content content" ". due due" ". status edit";
+  }
+  .studio-app .studio-task-row:has(> .task-check) > .due-date {
+    padding-top: 0;
+  }
+}
+@media (max-width: 450px) {
+  .studio-app .money-card {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .studio-app .money-card strong {
+    font-size: 18px;
+    letter-spacing: -0.5px;
+  }
+  .modal .studio-form {
+    padding: 20px;
+  }
 }
 body :is(.studio-app, .modal) .badge {
   border-radius: 999px;
@@ -680,7 +818,7 @@ body :is(.studio-app, .modal) .badge.amber .status-dot {
     .field textarea
   ) {
   border-color: #b9bdcd;
-  border-radius: 18px;
+  border-radius: 10px;
 }
 .modal .project-field input[aria-invalid="true"] {
   border-color: var(--danger);
