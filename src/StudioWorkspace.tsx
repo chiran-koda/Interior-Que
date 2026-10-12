@@ -34,6 +34,9 @@ import {
   Paintbrush,
   Building2,
   Camera,
+  MessageSquare,
+  Bell,
+  Sparkles,
 } from "lucide-react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
@@ -48,6 +51,19 @@ import {
 } from "./components";
 import { Brand } from "./Brand";
 import { ProjectDialog } from "./ProjectDialog";
+import { LibraryProvider, ListManager, SmartField } from "./SmartField";
+import {
+  addDemoMessage,
+  addDemoChatAction,
+  inboxItems,
+  normalise,
+  type CollaborationCollection,
+  type ChatMessage,
+  type ChatActionKind,
+  type ChatWorkRecord,
+  type Notice,
+  type ListValue,
+} from "./collaboration";
 import { DailyReport } from "./DailyReport";
 import {
   templateTasks,
@@ -92,8 +108,22 @@ const DecisionInbox = lazy(() =>
 const FinanceOverview = lazy(() =>
   import("./ProjectTools").then((m) => ({ default: m.FinanceOverview })),
 );
+const ChatWorkspace = lazy(() =>
+  import("./ChatWorkspace").then((m) => ({ default: m.ChatWorkspace })),
+);
+const NotificationInbox = lazy(() =>
+  import("./ChatWorkspace").then((m) => ({ default: m.NotificationInbox })),
+);
+const AssistantWorkspace = lazy(() =>
+  import("./AssistantWorkspace").then((m) => ({
+    default: m.AssistantWorkspace,
+  })),
+);
 
 type StudioPage =
+  | "Chat"
+  | "Inbox"
+  | "Assistant"
   | "Today"
   | "Projects"
   | "Tasks"
@@ -115,6 +145,7 @@ type DialogKind =
   | "member"
   | "material";
 type CollectionKey =
+  | CollaborationCollection
   | OperationCollection
   | "projects"
   | "tasks"
@@ -129,6 +160,9 @@ type CollectionKey =
   | "cashOpenings"
   | "balanceOpenings";
 const pageIcons = {
+  Chat: MessageSquare,
+  Inbox: Bell,
+  Assistant: Sparkles,
   Today: Home,
   Projects: Layers,
   Tasks: ListChecks,
@@ -180,6 +214,7 @@ export function StudioWorkspace({
   const [page, setPage] = useState<StudioPage>("Today");
   const [projectId, setProjectId] = useState("");
   const [projectToolTab, setProjectToolTab] = useState("");
+  const [focusMessage, setFocusMessage] = useState("");
   const [query, setQuery] = useState("");
   const [taskFilter, setTaskFilter] = useState("My tasks");
   const [drawer, setDrawer] = useState(false);
@@ -267,6 +302,7 @@ export function StudioWorkspace({
     setPage(next);
     setProjectId(id);
     setProjectToolTab(tool);
+    setFocusMessage("");
     setQuery("");
     setDrawer(false);
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -365,6 +401,95 @@ export function StudioWorkspace({
       if (demo) await persist((s) => applyProjectPayment(s, record));
       else await cloud.saveProjectPayment(data.id, record);
     }, "Transaction saved.");
+  const saveChoice = async (entry: ListValue) => {
+    if (member.role === "client" || member.active === false)
+      throw new Error("Only your team can manage company choices.");
+    if (!normalise(entry.value) || entry.value.length > 120)
+      throw new Error("Use a name of 1–120 characters.");
+    if (entry.category === "units" && entry.value.length > 40)
+      throw new Error("Use a unit name of up to 40 characters.");
+    if (!demo && !navigator.onLine)
+      throw new Error("Reconnect to save a shared choice.");
+    await save("listValues", entry);
+  };
+  const sendChat = (record: ChatMessage) =>
+    run(async () => {
+      if (demo) await persist((s) => addDemoMessage(s, member, record));
+      else await cloud.sendMessage(data.id, record);
+    }, "Message sent.");
+  const linkChat = (
+    message: ChatMessage,
+    kind: ChatActionKind,
+    record: ChatWorkRecord,
+  ) =>
+    run(async () => {
+      if (demo)
+        await persist((s) => {
+          const next = addDemoChatAction(s, member, message, kind, record);
+          if (kind === "task") {
+            const progress = taskProgress(
+              next.tasks.filter((t) => t.projectId === record.projectId),
+            );
+            next.projects = next.projects.map((p) =>
+              p.id === record.projectId
+                ? {
+                    ...p,
+                    progress,
+                    status: progress ? "In progress" : "Planning",
+                  }
+                : p,
+            );
+          }
+          return next;
+        });
+      else
+        await cloud.convertMessage(data.id, message, kind, record, member.id);
+    }, "Linked work created.");
+  const saveAssistantTask = (task: StudioTask) =>
+    run(async () => {
+      if (client || !canAccessProject(member, task.projectId))
+        throw new Error("Only the assigned team can create this task.");
+      if (demo)
+        await persist((s) => {
+          const tasks = [task, ...s.tasks.filter((t) => t.id !== task.id)],
+            progress = taskProgress(
+              tasks.filter((t) => t.projectId === task.projectId),
+            );
+          return {
+            ...s,
+            tasks,
+            projects: s.projects.map((p) =>
+              p.id === task.projectId
+                ? {
+                    ...p,
+                    progress,
+                    status: progress ? "In progress" : "Planning",
+                  }
+                : p,
+            ),
+          };
+        });
+      else await cloud.saveTask(data.id, task);
+    }, "Reviewed task created.");
+  const notices = inboxItems(data, member),
+    unreadCount = notices.filter((n) => !n.read).length;
+  const readNotice = (notice: Notice) =>
+    run(async () => {
+      if (notice.mentionId)
+        await patch("notifications", notice.mentionId, { read: true });
+      else {
+        const existing = source.inboxReads?.find((r) => r.userId === member.id),
+          keys = [...new Set([...(existing?.keys || []), notice.key])].slice(
+            -300,
+          );
+        await save("inboxReads", { id: member.id, userId: member.id, keys });
+      }
+    }, "Notification marked read.");
+  const openNotice = (notice: Notice) => {
+    if (!notice.read) void readNotice(notice);
+    navigate(notice.page, notice.projectId, notice.tool);
+    if (notice.messageId) setFocusMessage(notice.messageId);
+  };
   const setTaskStatus = (task: StudioTask, status: StudioTask["status"]) =>
     run(
       async () => {
@@ -434,10 +559,23 @@ export function StudioWorkspace({
     .filter((u) => u.blocker)
     .sort((a, b) => b.date.localeCompare(a.date));
   const pages: StudioPage[] = client
-    ? ["Today", "Projects", "Approvals", "Site updates", "Photos", "Settings"]
+    ? [
+        "Today",
+        "Projects",
+        "Chat",
+        "Inbox",
+        "Assistant",
+        "Approvals",
+        "Site updates",
+        "Photos",
+        "Settings",
+      ]
     : [
         "Today",
         "Projects",
+        "Chat",
+        "Inbox",
+        "Assistant",
         "Tasks",
         "Approvals",
         "Site updates",
@@ -695,876 +833,773 @@ export function StudioWorkspace({
       </div>
     );
   return (
-    <div className="studio-app">
-      <a className="skip-link" href="#studio-main">
-        Skip to workspace
-      </a>
-      <div
-        className={`studio-scrim ${drawer ? "visible" : ""}`}
-        onClick={() => setDrawer(false)}
-      />
-      <aside className={`studio-sidebar ${drawer ? "open" : ""}`}>
-        <Brand />
-        <button
-          className="studio-close-menu"
-          aria-label="Close navigation"
+    <LibraryProvider data={data} member={member} onSave={saveChoice}>
+      <div className="studio-app">
+        <a className="skip-link" href="#studio-main">
+          Skip to workspace
+        </a>
+        <div
+          className={`studio-scrim ${drawer ? "visible" : ""}`}
           onClick={() => setDrawer(false)}
-        >
-          <X />
-        </button>
-        <div className="studio-company">
-          <Building2 size={18} />
-          <span>
-            {data.name}
-            <small>{roleNames[member.role]}</small>
-          </span>
-        </div>
-        <p className="nav-label">YOUR WORKSPACE</p>
-        <nav aria-label="Studio navigation">
-          {pages.map((p) => {
-            const Icon = pageIcons[p];
-            return (
-              <button
-                key={p}
-                aria-current={page === p ? "page" : undefined}
-                className={page === p ? "active" : ""}
-                onClick={() => navigate(p)}
-              >
-                <Icon size={19} />
-                <span>
-                  {p === "Tasks" ? (owner ? "Team tasks" : "My tasks") : p}
-                </span>
-                {p === "Approvals" && decisionCount > 0 && (
-                  <b>{decisionCount}</b>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="studio-sidebar-bottom">
-          {demo && (
-            <label className="demo-role-label">
-              Explore another role
-              <select
-                aria-label="Demo role"
-                value={demoRole}
-                onChange={(e) => changeDemoRole?.(e.target.value as StudioRole)}
-              >
-                {Object.entries(roleNames).map(([key, name]) => (
-                  <option key={key} value={key}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <div className="studio-person">
-            <Avatar name={member.name} />
+        />
+        <aside className={`studio-sidebar ${drawer ? "open" : ""}`}>
+          <Brand />
+          <button
+            className="studio-close-menu"
+            aria-label="Close navigation"
+            onClick={() => setDrawer(false)}
+          >
+            <X />
+          </button>
+          <div className="studio-company">
+            <Building2 size={18} />
             <span>
-              <b>{member.name}</b>
-              <small>{demo ? "Demo workspace" : "Company workspace"}</small>
+              {data.name}
+              <small>{roleNames[member.role]}</small>
             </span>
           </div>
-          <button
-            onClick={() => {
-              onLeave();
-            }}
-          >
-            <LogOut size={17} />
-            {demo ? "Back to welcome" : "Sign out"}
-          </button>
-        </div>
-      </aside>
-      <div className="studio-content">
-        <header className="studio-topbar">
-          <button
-            className="icon-btn studio-open-menu"
-            aria-label="Open navigation"
-            onClick={() => setDrawer(true)}
-          >
-            <Menu />
-          </button>
-          <span>
-            <Home size={16} />
-            {data.name}
-            <span>/</span>
-            <b>{page}</b>
-          </span>
-          <label>
-            <Search size={17} />
-            <input
-              aria-label="Search current page"
-              placeholder="Search this page…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <span className={`studio-connection ${online ? "" : "offline"}`}>
-            <i />
-            {demo ? "Device demo" : online ? "Team connected" : "Offline view"}
-          </span>
-        </header>
-        <main id="studio-main">
-          {!demo && (
-            <div className="studio-development-note">
-              <Cloud size={16} />
-              Development workspace · use this studio for testing.
-            </div>
-          )}
-          {demo && (
-            <div className="studio-demo-note">
-              <span>DEMO</span>Explore the{" "}
-              {roleNames[member.role].toLowerCase()} workflow. Changes are saved
-              on this device.
-              <button
-                onClick={() => {
-                  onLeave();
-                }}
-              >
-                Company sign-in
-                <ArrowRight size={14} />
-              </button>
-            </div>
-          )}
-          {!online && !demo && (
-            <div className="studio-info">
-              You are offline. Reconnect to save team changes.
-            </div>
-          )}
-          {needsUpdate && (
-            <div className="studio-info">
-              An updated Interior Que is ready.
-              <Button onClick={() => updateServiceWorker(true)}>
-                Update app
-              </Button>
-            </div>
-          )}
-          <div className="studio-page-heading">
-            <div>
-              <span className="eyebrow">
-                {page === "Today"
-                  ? roleNames[member.role].toUpperCase()
-                  : "INTERIOR QUE WORKSPACE"}
-              </span>
-              <h1>
-                {page === "Today"
-                  ? `Hello, ${member.name.replace(/^(Mr\.?|Mrs\.?|Dr\.?)\s*/, "").split(" ")[0]}.`
-                  : currentProject
-                    ? currentProject.name
-                    : page === "Tasks"
-                      ? owner
-                        ? "Team tasks"
-                        : "My tasks"
-                      : page === "Approvals"
-                        ? "Decisions, made clear."
-                        : page}
-              </h1>
-              <p>
-                {page === "Today"
-                  ? roleCopy[member.role].description
-                  : currentProject
-                    ? `${currentProject.clientName} · ${currentProject.location}`
-                    : page === "Tasks"
-                      ? "Know what to do, who owns it and when it is due."
-                      : page === "Approvals"
-                        ? "A clear record of what was approved and what needs to change."
-                        : "Everything you need, in one place."}
-              </p>
-            </div>
-            {primary[page] && (
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() => open(primary[page]!.kind)}
-              >
-                <Plus size={17} />
-                {primary[page]!.label}
-              </Button>
+          <p className="nav-label">YOUR WORKSPACE</p>
+          <nav aria-label="Studio navigation">
+            {pages.map((p) => {
+              const Icon = pageIcons[p];
+              return (
+                <button
+                  key={p}
+                  aria-current={page === p ? "page" : undefined}
+                  className={page === p ? "active" : ""}
+                  onClick={() => navigate(p)}
+                >
+                  <Icon size={19} />
+                  <span>
+                    {p === "Tasks" ? (owner ? "Team tasks" : "My tasks") : p}
+                  </span>
+                  {p === "Approvals" && decisionCount > 0 && (
+                    <b>{decisionCount}</b>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="studio-sidebar-bottom">
+            {demo && (
+              <label className="demo-role-label">
+                Explore another role
+                <select
+                  aria-label="Demo role"
+                  value={demoRole}
+                  onChange={(e) =>
+                    changeDemoRole?.(e.target.value as StudioRole)
+                  }
+                >
+                  {Object.entries(roleNames).map(([key, name]) => (
+                    <option key={key} value={key}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
+            <div className="studio-person">
+              <Avatar name={member.name} />
+              <span>
+                <b>{member.name}</b>
+                <small>{demo ? "Demo workspace" : "Company workspace"}</small>
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                onLeave();
+              }}
+            >
+              <LogOut size={17} />
+              {demo ? "Back to welcome" : "Sign out"}
+            </button>
           </div>
-          {error && (
-            <div className="studio-error" role="alert">
-              <TriangleAlert size={17} />
-              {error}
-              <button aria-label="Dismiss error" onClick={() => setError("")}>
-                <X size={16} />
-              </button>
-            </div>
-          )}
-          {message && (
-            <div className="studio-success" role="status">
-              <CheckCircle2 size={17} />
-              {message}
-              <button
-                aria-label="Dismiss message"
-                onClick={() => setMessage("")}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
-          {page === "Today" && (
-            <>
-              <div className="studio-summary">
-                {[
-                  {
-                    label: client ? "Your projects" : "Projects in motion",
-                    value: data.projects.filter((p) => p.status !== "Completed")
-                      .length,
-                    text: "Open your project overview",
-                    target: "Projects",
-                  },
-                  {
-                    label: client
-                      ? "Decisions for you"
-                      : owner
-                        ? "Team open tasks"
-                        : "My open tasks",
-                    value: client ? decisionCount : myTasks.length,
-                    text: client
-                      ? "Review and respond"
-                      : "Pick up your next task",
-                    target: client ? "Approvals" : "Tasks",
-                  },
-                  {
-                    label: client ? "Shared site updates" : "Overdue tasks",
-                    value: client ? data.updates.length : urgent.length,
-                    text: client
-                      ? "See the latest progress"
-                      : "Help the team catch up",
-                    target: client ? "Site updates" : "Tasks",
-                  },
-                  {
-                    label: client ? "Shared photos" : "Awaiting approval",
-                    value: client ? data.files.length : waitingCount,
-                    text: client
-                      ? "View photos shared by your team"
-                      : "See what needs a decision",
-                    target: client ? "Photos" : "Approvals",
-                  },
-                ].map((s) => (
-                  <button
-                    key={s.label}
-                    className={
-                      s.label === "Overdue tasks" && s.value > 0
-                        ? "summary-overdue"
-                        : undefined
-                    }
-                    onClick={() => {
-                      navigate(s.target as StudioPage);
-                      if (s.label === "Overdue tasks") setTaskFilter("Overdue");
-                      if (s.label === "Team open tasks")
-                        setTaskFilter("Team tasks");
-                    }}
-                  >
-                    <span>
-                      {s.label}
-                      <ArrowRight size={17} />
-                    </span>
-                    <b>{s.value}</b>
-                    <small>{s.text}</small>
-                  </button>
-                ))}
+        </aside>
+        <div className="studio-content">
+          <header className="studio-topbar">
+            <button
+              className="notification-shortcut"
+              aria-label={`Open notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+              onClick={() => navigate("Inbox")}
+            >
+              <Bell size={19} />
+              {unreadCount > 0 && (
+                <b>{unreadCount > 99 ? "99+" : unreadCount}</b>
+              )}
+            </button>
+            <button
+              className="icon-btn studio-open-menu"
+              aria-label="Open navigation"
+              onClick={() => setDrawer(true)}
+            >
+              <Menu />
+            </button>
+            <span>
+              <Home size={16} />
+              {data.name}
+              <span>/</span>
+              <b>{page}</b>
+            </span>
+            <label>
+              <Search size={17} />
+              <input
+                aria-label="Search current page"
+                placeholder="Search this page…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <span className={`studio-connection ${online ? "" : "offline"}`}>
+              <i />
+              {demo
+                ? "Device demo"
+                : online
+                  ? "Team connected"
+                  : "Offline view"}
+            </span>
+          </header>
+          <main id="studio-main">
+            {!demo && (
+              <div className="studio-development-note">
+                <Cloud size={16} />
+                Development workspace · use this studio for testing.
               </div>
-              <Suspense fallback={null}>
-                <DecisionInbox
-                  data={data}
-                  member={member}
-                  demo={demo}
-                  busy={busy}
-                  onSave={saveOperation}
-                  onlyMine
-                />
-              </Suspense>
-              <div className="studio-today-intro">
-                <div>
-                  <span className="eyebrow">TODAY, MADE SIMPLE</span>
-                  <h2>{roleCopy[member.role].title}</h2>
-                  <p>
-                    {client
-                      ? "Your team shares the work here. You can review decisions as they come in."
-                      : "Start with one clear action. The rest of your team can follow the progress."}
-                  </p>
-                </div>
-                {actions}
+            )}
+            {demo && (
+              <div className="studio-demo-note">
+                <span>DEMO</span>Explore the{" "}
+                {roleNames[member.role].toLowerCase()} workflow. Changes are
+                saved on this device.
+                <button
+                  onClick={() => {
+                    onLeave();
+                  }}
+                >
+                  Company sign-in
+                  <ArrowRight size={14} />
+                </button>
               </div>
-              <div className="studio-two-columns">
-                <section className="studio-panel">
-                  <div className="studio-section-heading">
-                    <h2>
-                      {client
-                        ? "Your decisions"
+            )}
+            {!online && !demo && (
+              <div className="studio-info">
+                You are offline. Reconnect to save team changes.
+              </div>
+            )}
+            {needsUpdate && (
+              <div className="studio-info">
+                An updated Interior Que is ready.
+                <Button onClick={() => updateServiceWorker(true)}>
+                  Update app
+                </Button>
+              </div>
+            )}
+            <div className="studio-page-heading">
+              <div>
+                <span className="eyebrow">
+                  {page === "Today"
+                    ? roleNames[member.role].toUpperCase()
+                    : "INTERIOR QUE WORKSPACE"}
+                </span>
+                <h1>
+                  {page === "Today"
+                    ? `Hello, ${member.name.replace(/^(Mr\.?|Mrs\.?|Dr\.?)\s*/, "").split(" ")[0]}.`
+                    : currentProject
+                      ? currentProject.name
+                      : page === "Tasks"
+                        ? owner
+                          ? "Team tasks"
+                          : "My tasks"
+                        : page === "Approvals"
+                          ? "Decisions, made clear."
+                          : page}
+                </h1>
+                <p>
+                  {page === "Today"
+                    ? roleCopy[member.role].description
+                    : currentProject
+                      ? `${currentProject.clientName} · ${currentProject.location}`
+                      : page === "Tasks"
+                        ? "Know what to do, who owns it and when it is due."
+                        : page === "Approvals"
+                          ? "A clear record of what was approved and what needs to change."
+                          : "Everything you need, in one place."}
+                </p>
+              </div>
+              {primary[page] && (
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => open(primary[page]!.kind)}
+                >
+                  <Plus size={17} />
+                  {primary[page]!.label}
+                </Button>
+              )}
+            </div>
+            {error && (
+              <div className="studio-error" role="alert">
+                <TriangleAlert size={17} />
+                {error}
+                <button aria-label="Dismiss error" onClick={() => setError("")}>
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+            {message && (
+              <div className="studio-success" role="status">
+                <CheckCircle2 size={17} />
+                {message}
+                <button
+                  aria-label="Dismiss message"
+                  onClick={() => setMessage("")}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+            {page === "Today" && (
+              <>
+                <div className="studio-summary">
+                  {[
+                    {
+                      label: client ? "Your projects" : "Projects in motion",
+                      value: data.projects.filter(
+                        (p) => p.status !== "Completed",
+                      ).length,
+                      text: "Open your project overview",
+                      target: "Projects",
+                    },
+                    {
+                      label: client
+                        ? "Decisions for you"
                         : owner
-                          ? "Next tasks across your team"
-                          : "Your next tasks"}
-                    </h2>
+                          ? "Team open tasks"
+                          : "My open tasks",
+                      value: client ? decisionCount : myTasks.length,
+                      text: client
+                        ? "Review and respond"
+                        : "Pick up your next task",
+                      target: client ? "Approvals" : "Tasks",
+                    },
+                    {
+                      label: client ? "Shared site updates" : "Overdue tasks",
+                      value: client ? data.updates.length : urgent.length,
+                      text: client
+                        ? "See the latest progress"
+                        : "Help the team catch up",
+                      target: client ? "Site updates" : "Tasks",
+                    },
+                    {
+                      label: client ? "Shared photos" : "Awaiting approval",
+                      value: client ? data.files.length : waitingCount,
+                      text: client
+                        ? "View photos shared by your team"
+                        : "See what needs a decision",
+                      target: client ? "Photos" : "Approvals",
+                    },
+                  ].map((s) => (
                     <button
-                      onClick={() => navigate(client ? "Approvals" : "Tasks")}
-                    >
-                      View all
-                      <ArrowRight size={15} />
-                    </button>
-                  </div>
-                  {client ? (
-                    decisionCount ? (
-                      approvalCards(myDecisions)
-                    ) : (
-                      <Empty
-                        title="No decisions waiting"
-                        text="Your team will request your review when a design choice is ready."
-                      />
-                    )
-                  ) : myTasks.length ? (
-                    taskRows(
-                      [...myTasks].sort((a, b) => a.due.localeCompare(b.due)),
-                      5,
-                    )
-                  ) : (
-                    <Empty
-                      title="Your task list is clear"
-                      text="Pick up a team task or ask your owner to assign your next piece of work."
-                      action={
-                        <Button
-                          onClick={() => {
-                            setTaskFilter("Team tasks");
-                            navigate("Tasks");
-                          }}
-                        >
-                          View team tasks
-                        </Button>
+                      key={s.label}
+                      className={
+                        s.label === "Overdue tasks" && s.value > 0
+                          ? "summary-overdue"
+                          : undefined
                       }
-                    />
-                  )}
-                </section>
-                <section className="studio-panel">
-                  <div className="studio-section-heading">
-                    <h2>
-                      {client
-                        ? "Latest from your site"
-                        : "What needs attention"}
-                    </h2>
-                    <button onClick={() => navigate("Site updates")}>
-                      View updates
-                      <ArrowRight size={15} />
-                    </button>
-                  </div>
-                  {client ? (
-                    updateCards(data.updates.slice(0, 2))
-                  ) : blockers.length ? (
-                    blockers.slice(0, 3).map((u) => (
-                      <button
-                        className="attention-row"
-                        key={u.id}
-                        onClick={() => navigate("Site updates", u.projectId)}
-                      >
-                        <span>
-                          <TriangleAlert size={18} />
-                        </span>
-                        <div>
-                          <b>{u.blocker}</b>
-                          <small>
-                            {projectName(u.projectId)} · {dateLabel(u.date)}
-                          </small>
-                        </div>
-                        <ArrowRight size={16} />
-                      </button>
-                    ))
-                  ) : (
-                    <Empty
-                      title="No blockers reported"
-                      text="Site updates will bring problems to everyone’s attention."
-                    />
-                  )}
-                  {!client && waitingCount > 0 && (
-                    <button
-                      className="attention-row"
-                      onClick={() => navigate("Approvals")}
+                      onClick={() => {
+                        navigate(s.target as StudioPage);
+                        if (s.label === "Overdue tasks")
+                          setTaskFilter("Overdue");
+                        if (s.label === "Team open tasks")
+                          setTaskFilter("Team tasks");
+                      }}
                     >
                       <span>
-                        <Clock size={18} />
+                        {s.label}
+                        <ArrowRight size={17} />
                       </span>
-                      <div>
-                        <b>
-                          {waitingCount} decision
-                          {waitingCount === 1 ? "" : "s"} awaiting review
-                        </b>
-                        <small>
-                          Keep material orders and site work moving.
-                        </small>
-                      </div>
-                      <ArrowRight size={16} />
+                      <b>{s.value}</b>
+                      <small>{s.text}</small>
                     </button>
-                  )}
-                </section>
-              </div>
-              <section className="studio-project-section">
-                <div className="studio-section-heading">
-                  <h2>
-                    {client ? "Your project" : "A closer look at your projects"}
-                  </h2>
-                  <button onClick={() => navigate("Projects")}>
-                    All projects
-                    <ArrowRight size={15} />
-                  </button>
+                  ))}
                 </div>
-                <div className="studio-project-grid">
-                  {projectCards.slice(0, 3)}
-                </div>
-                {!data.projects.length && (
-                  <Empty
-                    title={
-                      owner
-                        ? "Let’s start your first project."
-                        : "No projects assigned yet"
-                    }
-                    text={
-                      owner
-                        ? "Add a client name and handover date. We’ll create a simple checklist to get the team started."
-                        : "Your owner will assign the projects you need to work on."
-                    }
-                    action={
-                      owner ? (
-                        <Button
-                          variant="primary"
-                          onClick={() => open("project")}
-                        >
-                          Create project
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                )}
-              </section>
-            </>
-          )}
-          {page === "Projects" &&
-            (currentProject ? (
-              <>
-                <button
-                  className="studio-back"
-                  onClick={() => navigate("Projects")}
-                >
-                  <ArrowLeft size={16} />
-                  All projects
-                </button>
-                <div className="studio-project-overview">
-                  <img
-                    src={asset(currentProject.image)}
-                    alt="Project design reference"
-                  />
-                  <div>
-                    <Badge>{currentProject.status}</Badge>
-                    <h2>{currentProject.name}</h2>
-                    <p>{currentProject.brief}</p>
-                    <span>
-                      Handover target · {dateLabel(currentProject.end)}
-                    </span>
-                    <Progress value={currentProject.progress} />
-                    <div className="studio-quick-actions">
-                      {!client && (
-                        <Button onClick={() => open("task")}>
-                          <Plus size={16} />
-                          Add task
-                        </Button>
-                      )}
-                      {!client && (
-                        <Button
-                          variant="primary"
-                          onClick={() => open("update")}
-                        >
-                          <HardHat size={16} />
-                          Post update
-                        </Button>
-                      )}
-                      <Button
-                        onClick={() => navigate("Approvals", currentProject.id)}
-                      >
-                        View approvals
-                        <ArrowRight size={16} />
-                      </Button>
-                      {owner && (
-                        <Button onClick={() => open("project", currentProject)}>
-                          Edit project
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <Suspense fallback={<Busy text="Opening project tools…" />}>
-                  <ProjectTools
-                    key={currentProject.id + member.role + projectToolTab}
+                <Suspense fallback={null}>
+                  <DecisionInbox
                     data={data}
                     member={member}
-                    project={currentProject}
                     demo={demo}
                     busy={busy}
                     onSave={saveOperation}
-                    initialTab={projectToolTab}
+                    onlyMine
                   />
                 </Suspense>
+                <div className="studio-today-intro">
+                  <div>
+                    <span className="eyebrow">TODAY, MADE SIMPLE</span>
+                    <h2>{roleCopy[member.role].title}</h2>
+                    <p>
+                      {client
+                        ? "Your team shares the work here. You can review decisions as they come in."
+                        : "Start with one clear action. The rest of your team can follow the progress."}
+                    </p>
+                  </div>
+                  {actions}
+                </div>
                 <div className="studio-two-columns">
                   <section className="studio-panel">
                     <div className="studio-section-heading">
                       <h2>
-                        {client ? "Project decisions" : "Project checklist"}
+                        {client
+                          ? "Your decisions"
+                          : owner
+                            ? "Next tasks across your team"
+                            : "Your next tasks"}
                       </h2>
+                      <button
+                        onClick={() => navigate(client ? "Approvals" : "Tasks")}
+                      >
+                        View all
+                        <ArrowRight size={15} />
+                      </button>
                     </div>
-                    {client
-                      ? approvalCards(projectRecords(data.approvals))
-                      : taskRows(projectRecords(data.tasks))}
-                  </section>
-                  <section className="studio-panel">
-                    <div className="studio-section-heading">
-                      <h2>Latest site updates</h2>
-                    </div>
-                    {updateCards(projectRecords(data.updates).slice(0, 3))}
-                    {!projectRecords(data.updates).length && (
+                    {client ? (
+                      decisionCount ? (
+                        approvalCards(myDecisions)
+                      ) : (
+                        <Empty
+                          title="No decisions waiting"
+                          text="Your team will request your review when a design choice is ready."
+                        />
+                      )
+                    ) : myTasks.length ? (
+                      taskRows(
+                        [...myTasks].sort((a, b) => a.due.localeCompare(b.due)),
+                        5,
+                      )
+                    ) : (
                       <Empty
-                        title="No site updates yet"
-                        text="Progress will appear here as your team records the work."
+                        title="Your task list is clear"
+                        text="Pick up a team task or ask your owner to assign your next piece of work."
+                        action={
+                          <Button
+                            onClick={() => {
+                              setTaskFilter("Team tasks");
+                              navigate("Tasks");
+                            }}
+                          >
+                            View team tasks
+                          </Button>
+                        }
                       />
                     )}
                   </section>
+                  <section className="studio-panel">
+                    <div className="studio-section-heading">
+                      <h2>
+                        {client
+                          ? "Latest from your site"
+                          : "What needs attention"}
+                      </h2>
+                      <button onClick={() => navigate("Site updates")}>
+                        View updates
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                    {client ? (
+                      updateCards(data.updates.slice(0, 2))
+                    ) : blockers.length ? (
+                      blockers.slice(0, 3).map((u) => (
+                        <button
+                          className="attention-row"
+                          key={u.id}
+                          onClick={() => navigate("Site updates", u.projectId)}
+                        >
+                          <span>
+                            <TriangleAlert size={18} />
+                          </span>
+                          <div>
+                            <b>{u.blocker}</b>
+                            <small>
+                              {projectName(u.projectId)} · {dateLabel(u.date)}
+                            </small>
+                          </div>
+                          <ArrowRight size={16} />
+                        </button>
+                      ))
+                    ) : (
+                      <Empty
+                        title="No blockers reported"
+                        text="Site updates will bring problems to everyone’s attention."
+                      />
+                    )}
+                    {!client && waitingCount > 0 && (
+                      <button
+                        className="attention-row"
+                        onClick={() => navigate("Approvals")}
+                      >
+                        <span>
+                          <Clock size={18} />
+                        </span>
+                        <div>
+                          <b>
+                            {waitingCount} decision
+                            {waitingCount === 1 ? "" : "s"} awaiting review
+                          </b>
+                          <small>
+                            Keep material orders and site work moving.
+                          </small>
+                        </div>
+                        <ArrowRight size={16} />
+                      </button>
+                    )}
+                  </section>
                 </div>
-                <section className="studio-panel">
+                <section className="studio-project-section">
                   <div className="studio-section-heading">
-                    <h2>Project photos</h2>
-                    <button
-                      onClick={() => navigate("Photos", currentProject.id)}
-                    >
-                      View all photos
-                      <ArrowRight size={16} />
+                    <h2>
+                      {client
+                        ? "Your project"
+                        : "A closer look at your projects"}
+                    </h2>
+                    <button onClick={() => navigate("Projects")}>
+                      All projects
+                      <ArrowRight size={15} />
                     </button>
                   </div>
-                  <div className="studio-file-grid">{fileCards}</div>
+                  <div className="studio-project-grid">
+                    {projectCards.slice(0, 3)}
+                  </div>
+                  {!data.projects.length && (
+                    <Empty
+                      title={
+                        owner
+                          ? "Let’s start your first project."
+                          : "No projects assigned yet"
+                      }
+                      text={
+                        owner
+                          ? "Add a client name and handover date. We’ll create a simple checklist to get the team started."
+                          : "Your owner will assign the projects you need to work on."
+                      }
+                      action={
+                        owner ? (
+                          <Button
+                            variant="primary"
+                            onClick={() => open("project")}
+                          >
+                            Create project
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  )}
                 </section>
               </>
-            ) : (
-              <div className="studio-project-grid">
-                {projectCards}
-                {!projectCards.length && (
+            )}
+            {page === "Projects" &&
+              (currentProject ? (
+                <>
+                  <button
+                    className="studio-back"
+                    onClick={() => navigate("Projects")}
+                  >
+                    <ArrowLeft size={16} />
+                    All projects
+                  </button>
+                  <div className="studio-project-overview">
+                    <img
+                      src={asset(currentProject.image)}
+                      alt="Project design reference"
+                    />
+                    <div>
+                      <Badge>{currentProject.status}</Badge>
+                      <h2>{currentProject.name}</h2>
+                      <p>{currentProject.brief}</p>
+                      <span>
+                        Handover target · {dateLabel(currentProject.end)}
+                      </span>
+                      <Progress value={currentProject.progress} />
+                      <div className="studio-quick-actions">
+                        {!client && (
+                          <Button onClick={() => open("task")}>
+                            <Plus size={16} />
+                            Add task
+                          </Button>
+                        )}
+                        {!client && (
+                          <Button
+                            variant="primary"
+                            onClick={() => open("update")}
+                          >
+                            <HardHat size={16} />
+                            Post update
+                          </Button>
+                        )}
+                        <Button
+                          onClick={() =>
+                            navigate("Approvals", currentProject.id)
+                          }
+                        >
+                          View approvals
+                          <ArrowRight size={16} />
+                        </Button>
+                        <Button
+                          onClick={() => navigate("Chat", currentProject.id)}
+                        >
+                          Project chat
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            navigate("Assistant", currentProject.id)
+                          }
+                        >
+                          Ask assistant
+                        </Button>
+                        {owner && (
+                          <Button
+                            onClick={() => open("project", currentProject)}
+                          >
+                            Edit project
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <Suspense fallback={<Busy text="Opening project tools…" />}>
+                    <ProjectTools
+                      key={currentProject.id + member.role + projectToolTab}
+                      data={data}
+                      member={member}
+                      project={currentProject}
+                      demo={demo}
+                      busy={busy}
+                      onSave={saveOperation}
+                      initialTab={projectToolTab}
+                    />
+                  </Suspense>
+                  <div className="studio-two-columns">
+                    <section className="studio-panel">
+                      <div className="studio-section-heading">
+                        <h2>
+                          {client ? "Project decisions" : "Project checklist"}
+                        </h2>
+                      </div>
+                      {client
+                        ? approvalCards(projectRecords(data.approvals))
+                        : taskRows(projectRecords(data.tasks))}
+                    </section>
+                    <section className="studio-panel">
+                      <div className="studio-section-heading">
+                        <h2>Latest site updates</h2>
+                      </div>
+                      {updateCards(projectRecords(data.updates).slice(0, 3))}
+                      {!projectRecords(data.updates).length && (
+                        <Empty
+                          title="No site updates yet"
+                          text="Progress will appear here as your team records the work."
+                        />
+                      )}
+                    </section>
+                  </div>
+                  <section className="studio-panel">
+                    <div className="studio-section-heading">
+                      <h2>Project photos</h2>
+                      <button
+                        onClick={() => navigate("Photos", currentProject.id)}
+                      >
+                        View all photos
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                    <div className="studio-file-grid">{fileCards}</div>
+                  </section>
+                </>
+              ) : (
+                <div className="studio-project-grid">
+                  {projectCards}
+                  {!projectCards.length && (
+                    <Empty
+                      title="No projects found"
+                      text={
+                        query
+                          ? "Try a different search."
+                          : "Create a project or ask your company owner for project access."
+                      }
+                    />
+                  )}
+                </div>
+              ))}
+            {page === "Tasks" && !client && (
+              <section className="studio-panel">
+                <div className="studio-filters">
+                  {["My tasks", "Team tasks", "Overdue", "Completed"].map(
+                    (filter) => (
+                      <button
+                        key={filter}
+                        aria-pressed={taskFilter === filter}
+                        onClick={() => setTaskFilter(filter)}
+                      >
+                        {filter}
+                      </button>
+                    ),
+                  )}
+                </div>
+                {(() => {
+                  const tasks = projectRecords(data.tasks)
+                    .filter(
+                      (t) =>
+                        matches(t.title) &&
+                        (taskFilter === "My tasks"
+                          ? t.assigneeId === member.id && t.status !== "Done"
+                          : taskFilter === "Overdue"
+                            ? isOverdue(t)
+                            : taskFilter === "Completed"
+                              ? t.status === "Done"
+                              : t.status !== "Done"),
+                    )
+                    .sort((a, b) => a.due.localeCompare(b.due));
+                  return tasks.length ? (
+                    taskRows(tasks)
+                  ) : (
+                    <Empty
+                      title="Nothing on this list"
+                      text="Try Team tasks, or add a task with a clear assignee and due date."
+                    />
+                  );
+                })()}
+              </section>
+            )}
+            {page === "Approvals" && (
+              <>
+                <Suspense fallback={<Busy text="Opening decisions…" />}>
+                  <DecisionInbox
+                    data={{
+                      ...data,
+                      selections: projectRecords(data.selections || []),
+                      changeOrders: projectRecords(data.changeOrders || []),
+                    }}
+                    member={member}
+                    demo={demo}
+                    busy={busy}
+                    onSave={saveOperation}
+                  />
+                </Suspense>
+                <div className="studio-info">
+                  <CheckCircle2 size={18} />
+                  {decisionCount} decision
+                  {decisionCount === 1 ? "" : "s"} awaiting your review.
+                  Approvals stay with the project.
+                </div>
+                <div className="studio-approval-grid">
+                  {approvalCards(
+                    projectRecords(data.approvals)
+                      .filter((a) => matches(`${a.title} ${a.description}`))
+                      .sort((a, b) => a.status.localeCompare(b.status)),
+                  )}
+                </div>
+                {!data.approvals.length && !operationPending.length && (
                   <Empty
-                    title="No projects found"
+                    title="No approval requests yet"
                     text={
-                      query
-                        ? "Try a different search."
-                        : "Create a project or ask your company owner for project access."
+                      client
+                        ? "Your team will share decisions when they are ready."
+                        : "Send a drawing or material decision to the person who needs to review it."
                     }
                   />
                 )}
-              </div>
-            ))}
-          {page === "Tasks" && !client && (
-            <section className="studio-panel">
-              <div className="studio-filters">
-                {["My tasks", "Team tasks", "Overdue", "Completed"].map(
-                  (filter) => (
-                    <button
-                      key={filter}
-                      aria-pressed={taskFilter === filter}
-                      onClick={() => setTaskFilter(filter)}
-                    >
-                      {filter}
-                    </button>
+              </>
+            )}
+            {page === "Site updates" && (
+              <div className="studio-update-list">
+                {updateCards(
+                  projectRecords(data.updates).filter((u) =>
+                    matches(`${u.summary} ${u.room} ${u.blocker}`),
                   ),
                 )}
-              </div>
-              {(() => {
-                const tasks = projectRecords(data.tasks)
-                  .filter(
-                    (t) =>
-                      matches(t.title) &&
-                      (taskFilter === "My tasks"
-                        ? t.assigneeId === member.id && t.status !== "Done"
-                        : taskFilter === "Overdue"
-                          ? isOverdue(t)
-                          : taskFilter === "Completed"
-                            ? t.status === "Done"
-                            : t.status !== "Done"),
-                  )
-                  .sort((a, b) => a.due.localeCompare(b.due));
-                return tasks.length ? (
-                  taskRows(tasks)
-                ) : (
+                {!data.updates.length && (
                   <Empty
-                    title="Nothing on this list"
-                    text="Try Team tasks, or add a task with a clear assignee and due date."
+                    title="No site updates yet"
+                    text="A short daily update keeps everyone on the same page."
                   />
-                );
-              })()}
-            </section>
-          )}
-          {page === "Approvals" && (
-            <>
-              <Suspense fallback={<Busy text="Opening decisions…" />}>
-                <DecisionInbox
-                  data={{
-                    ...data,
-                    selections: projectRecords(data.selections || []),
-                    changeOrders: projectRecords(data.changeOrders || []),
-                  }}
-                  member={member}
-                  demo={demo}
-                  busy={busy}
-                  onSave={saveOperation}
-                />
-              </Suspense>
-              <div className="studio-info">
-                <CheckCircle2 size={18} />
-                {decisionCount} decision
-                {decisionCount === 1 ? "" : "s"} awaiting your review. Approvals
-                stay with the project.
-              </div>
-              <div className="studio-approval-grid">
-                {approvalCards(
-                  projectRecords(data.approvals)
-                    .filter((a) => matches(`${a.title} ${a.description}`))
-                    .sort((a, b) => a.status.localeCompare(b.status)),
                 )}
               </div>
-              {!data.approvals.length && !operationPending.length && (
-                <Empty
-                  title="No approval requests yet"
-                  text={
-                    client
-                      ? "Your team will share decisions when they are ready."
-                      : "Send a drawing or material decision to the person who needs to review it."
-                  }
-                />
-              )}
-            </>
-          )}
-          {page === "Site updates" && (
-            <div className="studio-update-list">
-              {updateCards(
-                projectRecords(data.updates).filter((u) =>
-                  matches(`${u.summary} ${u.room} ${u.blocker}`),
-                ),
-              )}
-              {!data.updates.length && (
-                <Empty
-                  title="No site updates yet"
-                  text="A short daily update keeps everyone on the same page."
-                />
-              )}
-            </div>
-          )}
-          {page === "Materials" && !client && (
-            <section className="studio-panel">
-              <div className="ops-section-heading">
-                <div>
-                  <h2>Supplier orders & deliveries</h2>
-                  <p className="ops-help">
-                    Open a project’s orders to track quantities and supplier
-                    deliveries.
-                  </p>
-                </div>
-                <div className="ops-actions">
-                  {(projectId
-                    ? data.projects.filter((p) => p.id === projectId)
-                    : data.projects
-                  ).map((p) => (
-                    <Button
-                      key={p.id}
-                      onClick={() => navigate("Projects", p.id, "Orders")}
-                    >
-                      {p.name} orders
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              <div className="studio-info">
-                Plan what the project needs. Move each item from “To order” to
-                “On site” when it arrives.
-              </div>
-              {projectRecords(data.materials)
-                .filter((m) => matches(m.name))
-                .map((m) => (
-                  <div className="studio-task-row" key={m.id}>
-                    <Package size={21} />
-                    <div>
-                      <b>{m.name}</b>
-                      <small>
-                        {projectName(m.projectId)} · {m.quantity} {m.unit} ·{" "}
-                        {m.notes}
-                      </small>
-                    </div>
-                    <select
-                      aria-label={`Delivery status for ${m.name}`}
-                      value={m.status}
-                      disabled={busy}
-                      onChange={(e) =>
-                        run(
-                          () =>
-                            patch("materials", m.id, {
-                              status: e.target.value,
-                            }),
-                          "Material delivery status updated.",
-                        )
-                      }
-                    >
-                      {["To order", "Ordered", "On site"].map((s) => (
-                        <option key={s}>{s}</option>
-                      ))}
-                    </select>
+            )}
+            {page === "Materials" && !client && (
+              <section className="studio-panel">
+                <div className="ops-section-heading">
+                  <div>
+                    <h2>Supplier orders & deliveries</h2>
+                    <p className="ops-help">
+                      Open a project’s orders to track quantities and supplier
+                      deliveries.
+                    </p>
                   </div>
-                ))}
-              {!data.materials.length && (
-                <Empty
-                  title="Start a material list"
-                  text="Keep the quantities and delivery status beside the project."
-                />
-              )}
-            </section>
-          )}
-          {page === "Photos" && (
-            <>
-              <div className="studio-info">
-                <Cloud size={18} />
-                {client
-                  ? "View the project photos your team has shared with you."
-                  : "Choose photos, upload, and follow the progress. Photos are private unless shared with the client."}
-              </div>
-              {!client && (
-                <StorageMeter
-                  company={data.id}
-                  demo={demo}
-                  photos={data.files}
-                  refresh={photoRefresh}
-                />
-              )}
-              <div className="studio-file-grid">{fileCards}</div>
-              {!data.files.length && (
-                <Empty
-                  title="A place for your project photos"
-                  text="Upload site photos and design references to the project."
-                />
-              )}
-            </>
-          )}
-          {page === "Money" && owner && (
-            <Suspense fallback={<Busy text="Opening your money workspace…" />}>
-              <MoneyWorkspace
-                data={data}
-                query={query}
-                busy={busy}
-                onSave={savePayment}
-                onCategory={(record) =>
-                  run(() => save("moneyCategories", record), "Category saved.")
-                }
-                onOpening={(record) =>
-                  run(
-                    () => save("balanceOpenings", record),
-                    "Opening balance saved.",
-                  )
-                }
-              />
-              <FinanceOverview
-                data={data}
-                onOpen={(id) => navigate("Projects", id, "Budget")}
-              />
-            </Suspense>
-          )}
-          {page === "Team" && owner && (
-            <>
-              <div className="studio-info">
-                Invite by email and choose project access. An invitation does
-                not send an email; copy the join link and share it with that
-                person.
-              </div>
-              <div className="studio-team-grid">
-                {data.members.map((m) => (
-                  <article className="studio-person-card" key={m.id}>
-                    <Avatar name={m.name} size={48} />
-                    <h3>{m.name}</h3>
-                    <p>{m.email}</p>
-                    <Badge>
-                      {m.active === false ? "Access paused" : roleNames[m.role]}
-                    </Badge>
-                    <small>
-                      {m.role === "owner"
-                        ? "All projects"
-                        : m.projectIds.map(projectName).join(", ") ||
-                          "No assigned projects"}
-                    </small>
-                    {m.role !== "owner" && (
-                      <Button onClick={() => open("member", m)}>
-                        Manage access
+                  <div className="ops-actions">
+                    {(projectId
+                      ? data.projects.filter((p) => p.id === projectId)
+                      : data.projects
+                    ).map((p) => (
+                      <Button
+                        key={p.id}
+                        onClick={() => navigate("Projects", p.id, "Orders")}
+                      >
+                        {p.name} orders
                       </Button>
-                    )}
-                  </article>
-                ))}
-              </div>
-              <section className="studio-panel">
-                <div className="studio-section-heading">
-                  <h2>Invitations</h2>
-                  <button
-                    onClick={() =>
-                      run(async () => {
-                        await navigator.clipboard.writeText(
-                          `${location.origin}${import.meta.env.BASE_URL}?studio=${data.id}`,
-                        );
-                      }, "Join link copied. Share it with the invited person.")
-                    }
-                  >
-                    <Copy size={16} />
-                    Copy join link
-                  </button>
-                </div>
-                {data.invites.map((invite) => (
-                  <div className="studio-task-row" key={invite.id}>
-                    <Users size={19} />
-                    <div>
-                      <b>{invite.name}</b>
-                      <small>
-                        {invite.email} · {roleNames[invite.role]} ·{" "}
-                        {invite.projectIds.length} projects
-                      </small>
-                    </div>
-                    <Badge>{invite.status}</Badge>
+                    ))}
                   </div>
-                ))}
-                {!data.invites.length && (
+                </div>
+                <div className="studio-info">
+                  Plan what the project needs. Move each item from “To order” to
+                  “On site” when it arrives.
+                </div>
+                {projectRecords(data.materials)
+                  .filter((m) => matches(m.name))
+                  .map((m) => (
+                    <div className="studio-task-row" key={m.id}>
+                      <Package size={21} />
+                      <div>
+                        <b>{m.name}</b>
+                        <small>
+                          {projectName(m.projectId)} · {m.quantity} {m.unit} ·{" "}
+                          {m.notes}
+                        </small>
+                      </div>
+                      <select
+                        aria-label={`Delivery status for ${m.name}`}
+                        value={m.status}
+                        disabled={busy}
+                        onChange={(e) =>
+                          run(
+                            () =>
+                              patch("materials", m.id, {
+                                status: e.target.value,
+                              }),
+                            "Material delivery status updated.",
+                          )
+                        }
+                      >
+                        {["To order", "Ordered", "On site"].map((s) => (
+                          <option key={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                {!data.materials.length && (
                   <Empty
-                    title="Bring your people together"
-                    text="Invite your designers, supervisors and clients with the access they need."
+                    title="Start a material list"
+                    text="Keep the quantities and delivery status beside the project."
                   />
                 )}
               </section>
-            </>
-          )}
-          {page === "Settings" && (
-            <div className="studio-two-columns">
-              <section className="studio-panel">
-                <h2>Your workspace</h2>
-                <p>{data.name}</p>
-                <Badge>{roleNames[member.role]}</Badge>
-                <p>
-                  You can access{" "}
-                  {owner
-                    ? "all company projects"
-                    : `${data.projects.length} assigned project${data.projects.length === 1 ? "" : "s"}`}
-                  .
-                </p>
-                {owner && !demo && (
-                  <p>
-                    Company code: <code>{data.id}</code>
-                  </p>
-                )}
-                {demo && (
-                  <p>
-                    This is a demonstration on this device. Role switching is
-                    available only in the demo.
-                  </p>
-                )}
-              </section>
-              <section className="studio-panel">
-                <h2>Project photo storage</h2>
-                <p>
+            )}
+            {page === "Photos" && (
+              <>
+                <div className="studio-info">
+                  <Cloud size={18} />
                   {client
-                    ? "Your team shares project photos here for you to view."
-                    : "Upload from a phone or computer. Photos stay private to the project team unless you share them with the client."}
-                </p>
+                    ? "View the project photos your team has shared with you."
+                    : "Choose photos, upload, and follow the progress. Photos are private unless shared with the client."}
+                </div>
                 {!client && (
                   <StorageMeter
                     company={data.id}
@@ -1573,267 +1608,474 @@ export function StudioWorkspace({
                     refresh={photoRefresh}
                   />
                 )}
-                <div className="studio-info">
-                  Interior Que is in development. DesignQuote production
-                  accounts, records and subscriptions are not changed by this
-                  workspace.
-                </div>
-              </section>
-            </div>
-          )}
-          <footer className="studio-footer">
-            Interior Que · One clear next step.
-          </footer>
-        </main>
-        <nav
-          className="studio-mobile-nav"
-          aria-label="Mobile workspace navigation"
-        >
-          {(["Today", "Projects", "Approvals"] as StudioPage[]).map((p) => {
-            const Icon = pageIcons[p];
-            return (
-              <button
-                key={p}
-                aria-current={page === p ? "page" : undefined}
-                onClick={() => navigate(p)}
+                <div className="studio-file-grid">{fileCards}</div>
+                {!data.files.length && (
+                  <Empty
+                    title="A place for your project photos"
+                    text="Upload site photos and design references to the project."
+                  />
+                )}
+              </>
+            )}
+            {page === "Money" && owner && (
+              <Suspense
+                fallback={<Busy text="Opening your money workspace…" />}
               >
-                <Icon size={20} />
-                <span>{p}</span>
-              </button>
-            );
-          })}
-          <button
-            aria-label="More pages"
-            aria-expanded={drawer}
-            onClick={() => setDrawer(true)}
-          >
-            <Menu size={20} />
-            <span>More</span>
-          </button>
-        </nav>
-      </div>
-      {dialog?.kind === "file" && !client && (
-        <PhotoUploader
-          company={data.id}
-          projects={data.projects}
-          initialProject={projectId}
-          authorId={member.id}
-          demo={demo}
-          onDemoSave={(photo) => save("files", photo)}
-          onClose={() => setDialog(null)}
-          onUploaded={() => setPhotoRefresh((n) => n + 1)}
-        />
-      )}
-      {dialog?.kind === "update" && !client && (
-        <DailyReport
-          data={data}
-          member={member}
-          projectId={projectId}
-          demo={demo}
-          busy={busy}
-          onSave={(r) => run(() => save("updates", r), "Site report posted.")}
-          onDemoPhoto={(photo) => save("files", photo)}
-          onUploaded={() => setPhotoRefresh((n) => n + 1)}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog && dialog.kind !== "file" && dialog.kind !== "update" && (
-        <StudioDialog
-          kind={dialog.kind}
-          record={dialog.record}
-          data={data}
-          member={member}
-          projectId={projectId}
-          busy={busy}
-          workspaceError={error}
-          onClose={() => setDialog(null)}
-          onSubmit={async (fd) => {
-            const f = (key: string) => String(fd.get(key) || "").trim(),
-              id = dialog.record?.id || uid(),
-              project = f("projectId");
-            const kind = dialog.kind;
-            const ok = await run(
-              async () => {
-                if (
-                  !["project", "member", "invite"].includes(kind) &&
-                  !canAccessProject(member, project)
-                )
-                  throw new Error("Choose a project you can access.");
-                if (kind === "project") {
-                  if (!owner)
-                    throw new Error(
-                      "Only the owner can create or edit projects.",
-                    );
-                  if (f("end") < f("start"))
-                    throw new Error(
-                      "The handover date must be after the start date.",
-                    );
-                  const p = {
-                    id,
-                    name: f("name"),
-                    clientName: f("clientName"),
-                    location: f("location"),
-                    start: f("start"),
-                    end: f("end"),
-                    progress: dialog.record?.progress || 0,
-                    status: f("status") || dialog.record?.status || "Planning",
-                    brief: f("brief"),
-                    image: dialog.record?.image || "/images/living.jpg",
-                  };
-                  if (dialog.record) await save("projects", p);
-                  else {
-                    const tasks = templateTasks(
-                      f("templateId") || "basic",
-                      p,
-                      member.id,
-                    );
-                    if (demo)
-                      await persist((s) => ({
-                        ...s,
-                        projects: [p, ...s.projects],
-                        tasks: [...tasks, ...s.tasks],
-                      }));
-                    else await cloud.createProject(data.id, p, tasks);
+                <MoneyWorkspace
+                  data={data}
+                  query={query}
+                  busy={busy}
+                  onSave={savePayment}
+                  onCategory={(record) =>
+                    run(
+                      () => save("moneyCategories", record),
+                      "Category saved.",
+                    )
                   }
-                }
-                if (kind === "task") {
-                  const task: StudioTask = {
-                    id,
-                    projectId: project,
-                    title: f("title"),
-                    assigneeId: f("assigneeId"),
-                    due: f("due"),
-                    stage: f("stage"),
-                    priority: f("priority") as StudioTask["priority"],
-                    status: dialog.record?.status || "To do",
-                  };
-                  if (demo) {
-                    await save("tasks", task);
-                    const tasks = [
-                      ...data.tasks.filter(
-                        (t) => t.projectId === project && t.id !== id,
-                      ),
-                      task,
-                    ];
-                    const progress = taskProgress(tasks);
-                    await patch("projects", project, {
-                      progress,
-                      status:
-                        progress === 100
-                          ? "Completed"
-                          : progress > 0
-                            ? "In progress"
-                            : "Planning",
-                    });
-                  } else await cloud.saveTask(data.id, task);
-                }
-                if (kind === "update")
-                  await save("updates", {
-                    id,
-                    projectId: project,
-                    authorId: member.id,
-                    authorName: member.name,
-                    date: today(),
-                    room: f("room"),
-                    summary: f("summary"),
-                    blocker: f("blocker"),
-                    clientVisible: fd.has("clientVisible"),
-                  });
-                if (kind === "material") {
-                  const quantity = Number(f("quantity"));
-                  if (!(quantity > 0))
-                    throw new Error("Enter a quantity greater than zero.");
-                  await save("materials", {
-                    id,
-                    projectId: project,
-                    name: f("name"),
-                    quantity,
-                    unit: f("unit"),
-                    status: "To order",
-                    notes: f("notes"),
-                  });
-                }
-                if (kind === "approval") {
-                  const reviewer = data.members.find(
-                    (m) => m.id === f("reviewerId"),
-                  );
-                  if (
-                    !reviewer ||
-                    reviewer.active === false ||
-                    !canAccessProject(reviewer, project)
-                  )
-                    throw new Error(
-                      "The reviewer needs access to this project.",
-                    );
-                  if (reviewer.role === "client" && !fd.has("clientVisible"))
-                    throw new Error(
-                      "Enable Share with client for a client decision.",
-                    );
-                  await save("approvals", {
-                    id,
-                    projectId: project,
-                    title: f("title"),
-                    description: f("description"),
-                    reviewerId: f("reviewerId"),
-                    authorId: member.id,
-                    due: f("due"),
-                    status: "Awaiting decision",
-                    response: "",
-                    clientVisible: fd.has("clientVisible"),
-                  });
-                }
-                if (kind === "payment") {
-                  const amount = Number(f("amount"));
-                  if (!owner || !(amount > 0))
-                    throw new Error("Enter an amount greater than zero.");
-                  await save("payments", {
-                    id,
-                    projectId: project,
-                    description: f("description"),
-                    amount,
-                    type: f("type"),
-                    date: f("date"),
-                  });
-                }
-                if (kind === "invite" || kind === "member") {
-                  if (!owner)
-                    throw new Error("Only the owner can manage access.");
-                  const projectIds = fd.getAll("projectIds").map(String);
-                  if (projectIds.length > 25)
-                    throw new Error("Choose up to 25 projects per person.");
-                  const role = f("role") as StudioRole;
-                  if (!["designer", "supervisor", "client"].includes(role))
-                    throw new Error("Choose a valid role.");
-                  const record = {
-                    id: kind === "invite" ? f("email").toLowerCase() : id,
-                    name: f("name"),
-                    email:
-                      kind === "invite"
-                        ? f("email").toLowerCase()
-                        : dialog.record.email,
-                    role,
-                    projectIds,
-                    ...(kind === "invite"
-                      ? { status: "Pending" }
-                      : { active: fd.has("active") }),
-                  };
-                  await save(kind === "invite" ? "invites" : "members", record);
-                }
+                  onOpening={(record) =>
+                    run(
+                      () => save("balanceOpenings", record),
+                      "Opening balance saved.",
+                    )
+                  }
+                />
+                <FinanceOverview
+                  data={data}
+                  onOpen={(id) => navigate("Projects", id, "Budget")}
+                />
+              </Suspense>
+            )}
+            {page === "Chat" && (
+              <Suspense fallback={<Busy text="Opening chat…" />}>
+                <ChatWorkspace
+                  data={data}
+                  member={member}
+                  demo={demo}
+                  busy={busy}
+                  projectId={projectId}
+                  channel={projectToolTab}
+                  focusMessage={focusMessage}
+                  onProject={(id) => {
+                    setProjectId(id);
+                    setFocusMessage("");
+                  }}
+                  onSend={sendChat}
+                  onAction={linkChat}
+                  onOpen={navigate}
+                  onUpload={() => open("file")}
+                />
+              </Suspense>
+            )}
+            {page === "Inbox" && (
+              <Suspense fallback={<Busy text="Opening your inbox…" />}>
+                <NotificationInbox
+                  data={data}
+                  member={member}
+                  busy={busy}
+                  onRead={readNotice}
+                  onOpen={openNotice}
+                />
+              </Suspense>
+            )}
+            {page === "Assistant" && (
+              <Suspense fallback={<Busy text="Opening the assistant…" />}>
+                <AssistantWorkspace
+                  data={data}
+                  member={member}
+                  demo={demo}
+                  busy={busy}
+                  projectId={projectId}
+                  onProject={setProjectId}
+                  onOpen={navigate}
+                  onTask={saveAssistantTask}
+                  onReport={(r) =>
+                    run(() => save("updates", r), "Reviewed report posted.")
+                  }
+                />
+              </Suspense>
+            )}
+            {page === "Team" && owner && (
+              <>
+                <div className="studio-info">
+                  Invite by email and choose project access. An invitation does
+                  not send an email; copy the join link and share it with that
+                  person.
+                </div>
+                <div className="studio-team-grid">
+                  {data.members.map((m) => (
+                    <article className="studio-person-card" key={m.id}>
+                      <Avatar name={m.name} size={48} />
+                      <h3>{m.name}</h3>
+                      <p>{m.email}</p>
+                      <Badge>
+                        {m.active === false
+                          ? "Access paused"
+                          : roleNames[m.role]}
+                      </Badge>
+                      <small>
+                        {m.role === "owner"
+                          ? "All projects"
+                          : m.projectIds.map(projectName).join(", ") ||
+                            "No assigned projects"}
+                      </small>
+                      {m.role !== "owner" && (
+                        <Button onClick={() => open("member", m)}>
+                          Manage access
+                        </Button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                <section className="studio-panel">
+                  <div className="studio-section-heading">
+                    <h2>Invitations</h2>
+                    <button
+                      onClick={() =>
+                        run(async () => {
+                          await navigator.clipboard.writeText(
+                            `${location.origin}${import.meta.env.BASE_URL}?studio=${data.id}`,
+                          );
+                        }, "Join link copied. Share it with the invited person.")
+                      }
+                    >
+                      <Copy size={16} />
+                      Copy join link
+                    </button>
+                  </div>
+                  {data.invites.map((invite) => (
+                    <div className="studio-task-row" key={invite.id}>
+                      <Users size={19} />
+                      <div>
+                        <b>{invite.name}</b>
+                        <small>
+                          {invite.email} · {roleNames[invite.role]} ·{" "}
+                          {invite.projectIds.length} projects
+                        </small>
+                      </div>
+                      <Badge>{invite.status}</Badge>
+                    </div>
+                  ))}
+                  {!data.invites.length && (
+                    <Empty
+                      title="Bring your people together"
+                      text="Invite your designers, supervisors and clients with the access they need."
+                    />
+                  )}
+                </section>
+              </>
+            )}
+            {page === "Settings" && owner && <ListManager />}
+            {page === "Settings" && (
+              <div className="studio-two-columns">
+                <section className="studio-panel">
+                  <h2>Your workspace</h2>
+                  <p>{data.name}</p>
+                  <Badge>{roleNames[member.role]}</Badge>
+                  <p>
+                    You can access{" "}
+                    {owner
+                      ? "all company projects"
+                      : `${data.projects.length} assigned project${data.projects.length === 1 ? "" : "s"}`}
+                    .
+                  </p>
+                  {owner && !demo && (
+                    <p>
+                      Company code: <code>{data.id}</code>
+                    </p>
+                  )}
+                  {demo && (
+                    <p>
+                      This is a demonstration on this device. Role switching is
+                      available only in the demo.
+                    </p>
+                  )}
+                </section>
+                <section className="studio-panel">
+                  <h2>Project photo storage</h2>
+                  <p>
+                    {client
+                      ? "Your team shares project photos here for you to view."
+                      : "Upload from a phone or computer. Photos stay private to the project team unless you share them with the client."}
+                  </p>
+                  {!client && (
+                    <StorageMeter
+                      company={data.id}
+                      demo={demo}
+                      photos={data.files}
+                      refresh={photoRefresh}
+                    />
+                  )}
+                  <div className="studio-info">
+                    Interior Que is in development. DesignQuote production
+                    accounts, records and subscriptions are not changed by this
+                    workspace.
+                  </div>
+                </section>
+              </div>
+            )}
+            <footer className="studio-footer">
+              Interior Que · One clear next step.
+            </footer>
+          </main>
+          <nav
+            className="studio-mobile-nav"
+            aria-label="Mobile workspace navigation"
+          >
+            {(["Today", "Projects", "Chat", "Approvals"] as StudioPage[]).map(
+              (p) => {
+                const Icon = pageIcons[p];
+                return (
+                  <button
+                    key={p}
+                    aria-label={p}
+                    aria-current={page === p ? "page" : undefined}
+                    onClick={() => navigate(p)}
+                  >
+                    <Icon size={20} />
+                    <span>{p === "Approvals" ? "Review" : p}</span>
+                  </button>
+                );
               },
-              dialog.kind === "invite"
-                ? "Invitation saved. Copy the join link from Team and share it with this person."
-                : "Saved to the project.",
-            );
-            if (ok) {
-              setDialog(null);
-              if (kind === "project" && !dialog.record)
-                navigate("Projects", id);
-            }
-            return ok;
-          }}
-        />
-      )}
-    </div>
+            )}
+            <button
+              aria-label="More pages"
+              aria-expanded={drawer}
+              onClick={() => setDrawer(true)}
+            >
+              <Menu size={20} />
+              <span>More</span>
+            </button>
+          </nav>
+        </div>
+        {dialog?.kind === "file" && !client && (
+          <PhotoUploader
+            company={data.id}
+            projects={data.projects}
+            initialProject={projectId}
+            authorId={member.id}
+            demo={demo}
+            onDemoSave={(photo) => save("files", photo)}
+            onClose={() => setDialog(null)}
+            onUploaded={() => setPhotoRefresh((n) => n + 1)}
+          />
+        )}
+        {dialog?.kind === "update" && !client && (
+          <DailyReport
+            data={data}
+            member={member}
+            projectId={projectId}
+            demo={demo}
+            busy={busy}
+            onSave={(r) => run(() => save("updates", r), "Site report posted.")}
+            onDemoPhoto={(photo) => save("files", photo)}
+            onUploaded={() => setPhotoRefresh((n) => n + 1)}
+            onClose={() => setDialog(null)}
+          />
+        )}
+        {dialog && dialog.kind !== "file" && dialog.kind !== "update" && (
+          <StudioDialog
+            kind={dialog.kind}
+            record={dialog.record}
+            data={data}
+            member={member}
+            projectId={projectId}
+            busy={busy}
+            workspaceError={error}
+            onClose={() => setDialog(null)}
+            onSubmit={async (fd) => {
+              const f = (key: string) => String(fd.get(key) || "").trim(),
+                id = dialog.record?.id || uid(),
+                project = f("projectId");
+              const kind = dialog.kind;
+              const ok = await run(
+                async () => {
+                  if (
+                    !["project", "member", "invite"].includes(kind) &&
+                    !canAccessProject(member, project)
+                  )
+                    throw new Error("Choose a project you can access.");
+                  if (kind === "project") {
+                    if (!owner)
+                      throw new Error(
+                        "Only the owner can create or edit projects.",
+                      );
+                    if (f("end") < f("start"))
+                      throw new Error(
+                        "The handover date must be after the start date.",
+                      );
+                    const p = {
+                      id,
+                      name: f("name"),
+                      clientName: f("clientName"),
+                      location: f("location"),
+                      start: f("start"),
+                      end: f("end"),
+                      progress: dialog.record?.progress || 0,
+                      status:
+                        f("status") || dialog.record?.status || "Planning",
+                      brief: f("brief"),
+                      image: dialog.record?.image || "/images/living.jpg",
+                    };
+                    if (dialog.record) await save("projects", p);
+                    else {
+                      const tasks = templateTasks(
+                        f("templateId") || "basic",
+                        p,
+                        member.id,
+                      );
+                      if (demo)
+                        await persist((s) => ({
+                          ...s,
+                          projects: [p, ...s.projects],
+                          tasks: [...tasks, ...s.tasks],
+                        }));
+                      else await cloud.createProject(data.id, p, tasks);
+                    }
+                  }
+                  if (kind === "task") {
+                    const task: StudioTask = {
+                      id,
+                      projectId: project,
+                      title: f("title"),
+                      assigneeId: f("assigneeId"),
+                      due: f("due"),
+                      stage: f("stage"),
+                      priority: f("priority") as StudioTask["priority"],
+                      status: dialog.record?.status || "To do",
+                    };
+                    if (demo) {
+                      await save("tasks", task);
+                      const tasks = [
+                        ...data.tasks.filter(
+                          (t) => t.projectId === project && t.id !== id,
+                        ),
+                        task,
+                      ];
+                      const progress = taskProgress(tasks);
+                      await patch("projects", project, {
+                        progress,
+                        status:
+                          progress === 100
+                            ? "Completed"
+                            : progress > 0
+                              ? "In progress"
+                              : "Planning",
+                      });
+                    } else await cloud.saveTask(data.id, task);
+                  }
+                  if (kind === "update")
+                    await save("updates", {
+                      id,
+                      projectId: project,
+                      authorId: member.id,
+                      authorName: member.name,
+                      date: today(),
+                      room: f("room"),
+                      summary: f("summary"),
+                      blocker: f("blocker"),
+                      clientVisible: fd.has("clientVisible"),
+                    });
+                  if (kind === "material") {
+                    const quantity = Number(f("quantity"));
+                    if (!(quantity > 0))
+                      throw new Error("Enter a quantity greater than zero.");
+                    await save("materials", {
+                      id,
+                      projectId: project,
+                      name: f("name"),
+                      quantity,
+                      unit: f("unit"),
+                      status: "To order",
+                      notes: f("notes"),
+                      brand: f("brand"),
+                      category: f("category"),
+                    });
+                  }
+                  if (kind === "approval") {
+                    const reviewer = data.members.find(
+                      (m) => m.id === f("reviewerId"),
+                    );
+                    if (
+                      !reviewer ||
+                      reviewer.active === false ||
+                      !canAccessProject(reviewer, project)
+                    )
+                      throw new Error(
+                        "The reviewer needs access to this project.",
+                      );
+                    if (reviewer.role === "client" && !fd.has("clientVisible"))
+                      throw new Error(
+                        "Enable Share with client for a client decision.",
+                      );
+                    await save("approvals", {
+                      id,
+                      projectId: project,
+                      title: f("title"),
+                      description: f("description"),
+                      reviewerId: f("reviewerId"),
+                      authorId: member.id,
+                      due: f("due"),
+                      status: "Awaiting decision",
+                      response: "",
+                      clientVisible: fd.has("clientVisible"),
+                    });
+                  }
+                  if (kind === "payment") {
+                    const amount = Number(f("amount"));
+                    if (!owner || !(amount > 0))
+                      throw new Error("Enter an amount greater than zero.");
+                    await save("payments", {
+                      id,
+                      projectId: project,
+                      description: f("description"),
+                      amount,
+                      type: f("type"),
+                      date: f("date"),
+                    });
+                  }
+                  if (kind === "invite" || kind === "member") {
+                    if (!owner)
+                      throw new Error("Only the owner can manage access.");
+                    const projectIds = fd.getAll("projectIds").map(String);
+                    if (projectIds.length > 25)
+                      throw new Error("Choose up to 25 projects per person.");
+                    const role = f("role") as StudioRole;
+                    if (!["designer", "supervisor", "client"].includes(role))
+                      throw new Error("Choose a valid role.");
+                    const record = {
+                      id: kind === "invite" ? f("email").toLowerCase() : id,
+                      name: f("name"),
+                      email:
+                        kind === "invite"
+                          ? f("email").toLowerCase()
+                          : dialog.record.email,
+                      role,
+                      projectIds,
+                      ...(kind === "invite"
+                        ? { status: "Pending" }
+                        : { active: fd.has("active") }),
+                    };
+                    await save(
+                      kind === "invite" ? "invites" : "members",
+                      record,
+                    );
+                  }
+                },
+                dialog.kind === "invite"
+                  ? "Invitation saved. Copy the join link from Team and share it with this person."
+                  : "Saved to the project.",
+              );
+              if (ok) {
+                setDialog(null);
+                if (kind === "project" && !dialog.record)
+                  navigate("Projects", id);
+              }
+              return ok;
+            }}
+          />
+        )}
+      </div>
+    </LibraryProvider>
   );
 }
 
@@ -2017,11 +2259,13 @@ function StudioDialog({
           )}
           {kind === "task" && (
             <>
-              <Field
+              <SmartField
                 label="What needs to be done?"
                 name="title"
+                category="taskNames"
                 value={record?.title}
                 required
+                maxLength={300}
                 placeholder="e.g. Confirm kitchen electrical points"
               />
               <div className="form-grid">
@@ -2100,7 +2344,25 @@ function StudioDialog({
           )}
           {kind === "material" && (
             <>
-              <Field label="Material name" name="name" required />
+              <SmartField
+                label="Material name"
+                name="name"
+                category="materials"
+                required
+                maxLength={300}
+              />
+              <div className="form-grid">
+                <SmartField
+                  label="Brand (optional)"
+                  name="brand"
+                  category="brands"
+                />
+                <SmartField
+                  label="Work category (optional)"
+                  name="category"
+                  category="workCategories"
+                />
+              </div>
               <div className="form-grid">
                 <Field
                   label="Quantity"
@@ -2110,14 +2372,14 @@ function StudioDialog({
                   step="0.01"
                   required
                 />
-                <Field label="Unit" name="unit" value="Nos">
-                  <option>Nos</option>
-                  <option>Sheet</option>
-                  <option>Sq.ft</option>
-                  <option>Set</option>
-                  <option>Litre</option>
-                  <option>Kg</option>
-                </Field>
+                <SmartField
+                  label="Unit"
+                  name="unit"
+                  category="units"
+                  maxLength={40}
+                  value="Pieces"
+                  required
+                />
               </div>
               <Field
                 label="Delivery notes"

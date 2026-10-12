@@ -9,5 +9,11 @@
     "noEmit": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["index.ts", "security.ts", "firestore.ts", "service.ts"]
+  "include": [
+    "index.ts",
+    "security.ts",
+    "firestore.ts",
+    "service.ts",
+    "assistant.ts"
+  ]
 }

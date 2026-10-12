@@ -1,0 +1,15 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "interior-que-assistant-dev",
+  "main": "assistant.ts",
+  "compatibility_date": "2026-10-12",
+  "workers_dev": true,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "interior-que-development",
+    "ALLOWED_ORIGINS": "https://chiran-koda.github.io,http://127.0.0.1:5174,http://127.0.0.1:5173",
+    "DAILY_GLOBAL_REQUESTS": "100",
+    "DAILY_COMPANY_REQUESTS": "40",
+    "DAILY_USER_REQUESTS": "10",
+  },
+  "observability": { "enabled": false },
+}

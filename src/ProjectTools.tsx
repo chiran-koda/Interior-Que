@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Badge, Button, Empty, Field, Modal } from "./components";
 import { PhotoCard } from "./ProjectPhotos";
+import { SmartField } from "./SmartField";
 import { dateLabel, today, uid } from "./model";
 import { formatMoney as money } from "./money";
 import {
@@ -1103,18 +1104,41 @@ function OperationForm({
     type = "text",
     value = record?.[name],
     required = true,
-  ) => (
-    <Field
-      key={name}
-      label={label}
-      name={name}
-      type={type}
-      value={value}
-      required={required}
-      min={type === "number" ? 0 : undefined}
-      step={type === "number" ? "0.01" : undefined}
-    />
-  );
+  ) =>
+    ["room", "supplier", "unit"].includes(name) ||
+    (name === "title" &&
+      ["selections", "purchaseOrders"].includes(collection)) ? (
+      <SmartField
+        key={name}
+        label={label}
+        name={name}
+        category={
+          name === "room"
+            ? "rooms"
+            : name === "supplier"
+              ? "suppliers"
+              : name === "unit"
+                ? "units"
+                : collection === "selections"
+                  ? "finishes"
+                  : "materials"
+        }
+        value={String(value || "")}
+        required={required}
+        maxLength={name === "title" ? 300 : name === "unit" ? 40 : 120}
+      />
+    ) : (
+      <Field
+        key={name}
+        label={label}
+        name={name}
+        type={type}
+        value={value}
+        required={required}
+        min={type === "number" ? 0 : undefined}
+        step={type === "number" ? "0.01" : undefined}
+      />
+    );
   const photoField = (label = "Project photo", name = "photoId") => (
     <Field label={label} name={name} value={record?.[name] || ""}>
       <option value="">No photo</option>

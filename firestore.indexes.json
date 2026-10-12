@@ -139,6 +139,96 @@
         }
       ],
       "collectionGroup": "paymentSchedules"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "createdAt"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "chatMessages"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "chatActions"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "recipientId"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "createdAt"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "notifications"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "recipientId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "createdAt"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "notifications"
+    },
+    {
+      "fields": [
+        {
+          "order": "ASCENDING",
+          "fieldPath": "recipientId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "projectId"
+        },
+        {
+          "order": "ASCENDING",
+          "fieldPath": "clientVisible"
+        },
+        {
+          "order": "DESCENDING",
+          "fieldPath": "createdAt"
+        }
+      ],
+      "queryScope": "COLLECTION",
+      "collectionGroup": "notifications"
     }
   ],
   "fieldOverrides": []

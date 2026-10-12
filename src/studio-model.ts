@@ -1,5 +1,12 @@
 import { seed, today, uid } from "./model";
 import type {
+  ListValue,
+  ChatMessage,
+  ChatAction,
+  MentionNotice,
+  InboxRead,
+} from "./collaboration";
+import type {
   ProjectBudget,
   PaymentSchedule,
   Selection,
@@ -124,6 +131,8 @@ export interface StudioMaterial {
   unit: string;
   status: "To order" | "Ordered" | "On site";
   notes: string;
+  brand?: string;
+  category?: string;
 }
 export interface StudioInvite {
   id: string;
@@ -157,6 +166,11 @@ export interface StudioData {
   purchaseOrders?: PurchaseOrder[];
   snags?: Snag[];
   handovers?: Handover[];
+  listValues?: ListValue[];
+  chatMessages?: ChatMessage[];
+  chatActions?: ChatAction[];
+  notifications?: MentionNotice[];
+  inboxReads?: InboxRead[];
 }
 export const newStudio = (id: string, name: string): StudioData => ({
   id,
@@ -182,6 +196,11 @@ export const newStudio = (id: string, name: string): StudioData => ({
   purchaseOrders: [],
   snags: [],
   handovers: [],
+  listValues: [],
+  chatMessages: [],
+  chatActions: [],
+  notifications: [],
+  inboxReads: [],
 });
 export function demoStudio(): StudioData {
   const w = seed();
@@ -371,6 +390,22 @@ export function scopedStudio(
     handovers: (data.handovers || []).filter(
       (r) => allowed(r.projectId) && (!client || r.clientVisible),
     ),
+    listValues: (data.listValues || []).filter(
+      (v) => !client || ["rooms", "finishes"].includes(v.category),
+    ),
+    chatMessages: (data.chatMessages || []).filter(
+      (m) => allowed(m.projectId) && (!client || m.clientVisible),
+    ),
+    chatActions: (data.chatActions || []).filter(
+      (m) => allowed(m.projectId) && (!client || m.clientVisible),
+    ),
+    notifications: (data.notifications || []).filter(
+      (n) =>
+        n.recipientId === member.id &&
+        allowed(n.projectId) &&
+        (!client || n.clientVisible),
+    ),
+    inboxReads: (data.inboxReads || []).filter((r) => r.userId === member.id),
   };
 }
 export function taskProgress(tasks: StudioTask[]) {

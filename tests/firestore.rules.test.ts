@@ -18,6 +18,9 @@ import {
   query,
   where,
   documentId,
+  serverTimestamp,
+  orderBy,
+  limit,
 } from "firebase/firestore";
 let env: RulesTestEnvironment;
 const root = "interiorQueCompanies/studio";
@@ -27,6 +30,319 @@ const member = (id: string, role: string, projects = ["p1"]) => ({
   role,
   projectIds: projects,
   active: true,
+});
+describe("Chat, notifications and company choices", () => {
+  const message = (shared = false) => ({
+    projectId: "p1",
+    authorId: "supervisor",
+    authorName: "supervisor",
+    body: "Check delivery",
+    createdAt: serverTimestamp(),
+    clientVisible: shared,
+    replyTo: "",
+    mentions: [],
+    photoIds: [],
+  });
+  it("allows shared project chat for clients while keeping internal conversations private", async () => {
+    await assertSucceeds(
+      setDoc(ref(db("supervisor"), "chatMessages/internal"), message()),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("supervisor"), "chatMessages/shared"), message(true)),
+    );
+    await assertFails(getDoc(ref(db("client"), "chatMessages/internal")));
+    await assertSucceeds(getDoc(ref(db("client"), "chatMessages/shared")));
+    await assertFails(getDoc(ref(db("outsider"), "chatMessages/shared")));
+    await assertFails(
+      setDoc(ref(db("client"), "chatMessages/client-internal"), {
+        ...message(),
+        authorId: "client",
+        authorName: "client",
+      }),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("client"), "chatMessages/client-public"), {
+        ...message(true),
+        authorId: "client",
+        authorName: "client",
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "chatMessages/internal"), {
+        clientVisible: true,
+      }),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("client"), root, "chatMessages"),
+          where("projectId", "==", "p1"),
+          where("clientVisible", "==", true),
+          orderBy("createdAt", "desc"),
+          orderBy(documentId(), "desc"),
+          limit(50),
+        ),
+      ),
+    );
+  });
+  it("blocks impersonation, backdated messages, cross-channel replies and unavailable mentions", async () => {
+    const d = db("supervisor");
+    await setDoc(ref(d, "chatMessages/internal"), message());
+    await assertFails(
+      setDoc(ref(d, "chatMessages/forged"), {
+        ...message(),
+        authorName: "owner",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(d, "chatMessages/date"), { ...message(), createdAt: 1 }),
+    );
+    await assertFails(
+      setDoc(ref(d, "chatMessages/reply"), {
+        ...message(true),
+        replyTo: "internal",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(d, "chatMessages/mention"), {
+        ...message(),
+        mentions: ["outsider"],
+      }),
+    );
+    await assertFails(
+      setDoc(ref(d, "chatMessages/mention"), {
+        ...message(),
+        mentions: ["client"],
+      }),
+    );
+    await assertFails(
+      setDoc(ref(d, "chatMessages/mention"), {
+        ...message(),
+        mentions: ["designer", "designer"],
+      }),
+    );
+    await assertFails(
+      setDoc(ref(d, "chatMessages/blank"), { ...message(), body: "" }),
+    );
+  });
+  it("creates mention notices only alongside a valid message and keeps reads private", async () => {
+    const d = db("supervisor"),
+      b = writeBatch(d),
+      notice = {
+        projectId: "p1",
+        messageId: "mention",
+        recipientId: "designer",
+        authorId: "supervisor",
+        authorName: "supervisor",
+        createdAt: serverTimestamp(),
+        clientVisible: false,
+        read: false,
+      };
+    b.set(ref(d, "chatMessages/mention"), {
+      ...message(),
+      mentions: ["designer"],
+    });
+    b.set(ref(d, "notifications/mention_designer"), notice);
+    await assertSucceeds(b.commit());
+    await assertSucceeds(
+      getDoc(ref(db("designer"), "notifications/mention_designer")),
+    );
+    await assertFails(
+      getDoc(ref(db("owner"), "notifications/mention_designer")),
+    );
+    await assertFails(
+      updateDoc(ref(db("supervisor"), "notifications/mention_designer"), {
+        read: true,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("designer"), "notifications/mention_designer"), {
+        read: true,
+      }),
+    );
+    await assertFails(
+      updateDoc(ref(db("designer"), "notifications/mention_designer"), {
+        authorName: "different",
+      }),
+    );
+    await assertFails(
+      setDoc(ref(d, "notifications/mention_client"), {
+        ...notice,
+        recipientId: "client",
+      }),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("designer"), root, "notifications"),
+          where("recipientId", "==", "designer"),
+          where("projectId", "in", ["p1"]),
+        ),
+      ),
+    );
+  });
+  it("rejects private, missing and cross-project photo attachments in shared chat", async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      const d = c.firestore();
+      await setDoc(ref(d, "files/private"), {
+        projectId: "p1",
+        clientVisible: false,
+      });
+      await setDoc(ref(d, "files/other"), {
+        projectId: "p2",
+        clientVisible: true,
+      });
+    });
+    for (const photoId of ["private", "other", "missing", ""]) {
+      await assertFails(
+        setDoc(
+          ref(db("supervisor"), "chatMessages/photo-" + (photoId || "blank")),
+          { ...message(true), photoIds: [photoId] },
+        ),
+      );
+    }
+    await assertSucceeds(
+      setDoc(ref(db("supervisor"), "chatMessages/private-attachment"), {
+        ...message(),
+        photoIds: ["private"],
+      }),
+    );
+  });
+  it("supports five mentions, two photos and a reply within rule access limits", async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      const d = c.firestore();
+      for (let i = 0; i < 5; i++)
+        await setDoc(
+          ref(d, `members/team${i}`),
+          member(`team${i}`, "designer"),
+        );
+      for (const id of ["photo1", "photo2"])
+        await setDoc(ref(d, `files/${id}`), {
+          projectId: "p1",
+          clientVisible: true,
+        });
+    });
+    const d = db("supervisor");
+    await setDoc(ref(d, "chatMessages/parent"), message(true));
+    const b = writeBatch(d);
+    b.set(ref(d, "chatMessages/full"), {
+      ...message(true),
+      replyTo: "parent",
+      mentions: Array.from({ length: 5 }, (_, i) => `team${i}`),
+      photoIds: ["photo1", "photo2"],
+    });
+    for (let i = 0; i < 5; i++)
+      b.set(ref(d, `notifications/full_team${i}`), {
+        projectId: "p1",
+        messageId: "full",
+        recipientId: `team${i}`,
+        authorId: "supervisor",
+        authorName: "supervisor",
+        createdAt: serverTimestamp(),
+        clientVisible: true,
+        read: false,
+      });
+    await assertSucceeds(b.commit());
+    await assertFails(
+      setDoc(ref(d, "chatMessages/overlimit"), {
+        ...message(true),
+        mentions: Array.from({ length: 6 }, (_, i) => `team${i}`),
+      }),
+    );
+  });
+  it("links work atomically to a message and prevents retargeting or client assignment", async () => {
+    const d = db("supervisor");
+    await setDoc(ref(d, "chatMessages/work"), message());
+    const action = {
+      messageId: "work",
+      projectId: "p1",
+      kind: "task",
+      recordId: "work_task",
+      createdAt: serverTimestamp(),
+      authorId: "supervisor",
+      clientVisible: false,
+    };
+    await assertFails(setDoc(ref(d, "chatActions/work_task"), action));
+    const batch = writeBatch(d);
+    batch.set(ref(d, "tasks/work_task"), { ...task, title: "Follow delivery" });
+    batch.set(ref(d, "chatActions/work_task"), action);
+    await assertSucceeds(batch.commit());
+    await assertFails(
+      updateDoc(ref(d, "chatActions/work_task"), { recordId: "task" }),
+    );
+    await assertFails(
+      setDoc(ref(db("client"), "chatActions/work_task"), {
+        ...action,
+        authorId: "client",
+      }),
+    );
+    await assertFails(getDoc(ref(db("client"), "chatActions/work_task")));
+  });
+  it("protects company lists and lets only owners archive or rename choices", async () => {
+    const entry = { category: "rooms", value: "Study", active: true };
+    await assertSucceeds(
+      setDoc(ref(db("designer"), "listValues/study"), entry),
+    );
+    await assertSucceeds(getDoc(ref(db("client"), "listValues/study")));
+    await assertFails(
+      updateDoc(ref(db("designer"), "listValues/study"), { value: "Other" }),
+    );
+    await assertFails(
+      updateDoc(ref(db("designer"), "listValues/study"), { active: false }),
+    );
+    await assertSucceeds(
+      updateDoc(ref(db("owner"), "listValues/study"), { active: false }),
+    );
+    await assertFails(
+      updateDoc(ref(db("designer"), "listValues/study"), { active: true }),
+    );
+    await assertSucceeds(
+      setDoc(ref(db("owner"), "listValues/supplier"), {
+        ...entry,
+        category: "suppliers",
+        value: "Vendor",
+      }),
+    );
+    await assertFails(getDoc(ref(db("client"), "listValues/supplier")));
+    await assertFails(setDoc(ref(db("client"), "listValues/client"), entry));
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("client"), root, "listValues"),
+          where("category", "in", ["rooms", "finishes"]),
+        ),
+      ),
+    );
+  });
+  it("keeps inbox read states per user and blocks every client from AI counters", async () => {
+    await assertSucceeds(
+      setDoc(ref(db("designer"), "inboxReads/designer"), {
+        userId: "designer",
+        keys: ["task:a"],
+      }),
+    );
+    await assertFails(getDoc(ref(db("owner"), "inboxReads/designer")));
+    await assertFails(
+      setDoc(ref(db("designer"), "inboxReads/owner"), {
+        userId: "owner",
+        keys: [],
+      }),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db("designer"), root, "inboxReads"),
+          where("userId", "==", "designer"),
+        ),
+      ),
+    );
+    for (const id of ["owner", "designer", "supervisor", "client"]) {
+      await assertFails(getDoc(ref(db(id), "aiPrivateUsage/current")));
+      await assertFails(
+        setDoc(ref(db(id), "aiPrivateUsage/current"), { count: 0 }),
+      );
+    }
+  });
 });
 
 describe("Interior firm project tools", () => {

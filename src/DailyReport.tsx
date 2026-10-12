@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Modal } from "./components";
 import { PhotoUploader } from "./ProjectPhotos";
+import { SmartField } from "./SmartField";
 import { today, uid } from "./model";
 import { validDate } from "./money";
 import type {
@@ -166,16 +167,14 @@ export function DailyReport({
                   onChange={(e) => change("date", e.target.value)}
                 />
               </label>
-              <label className="field">
-                <span>Room / area *</span>
-                <input
-                  required
-                  maxLength={120}
-                  value={draft.room}
-                  onChange={(e) => change("room", e.target.value)}
-                  placeholder="e.g. Kitchen and living room"
-                />
-              </label>
+              <SmartField
+                label="Room / area"
+                name="room"
+                category="rooms"
+                value={draft.room}
+                onChange={(v) => change("room", v)}
+                required
+              />
               <label className="field">
                 <span>Workers on site</span>
                 <input

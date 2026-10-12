@@ -24,6 +24,7 @@ export function encode(value: any): Value {
   return { mapValue: { fields: fields(value) } };
 }
 export function decode(value: Value): any {
+  if ("timestampValue" in value) return Date.parse(value.timestampValue);
   if ("stringValue" in value) return value.stringValue;
   if ("integerValue" in value) return Number(value.integerValue);
   if ("doubleValue" in value) return value.doubleValue;
@@ -130,6 +131,67 @@ export class FirestoreStore implements Store {
     this.name(path);
     const data = await this.call(`/${path}`);
     return data ? record(data.fields || {}) : null;
+  }
+  async projectRecords(
+    company: string,
+    project: string,
+    key: string,
+    shared: boolean,
+  ) {
+    requireValue(
+      /^[\w-]{1,100}$/.test(company) &&
+        /^[\w-]{1,100}$/.test(project) &&
+        [
+          "tasks",
+          "updates",
+          "approvals",
+          "selections",
+          "changeOrders",
+          "drawings",
+          "snags",
+          "materials",
+          "purchaseOrders",
+          "paymentSchedules",
+        ].includes(key),
+      400,
+      "Invalid assistant data request.",
+    );
+    const filters = [
+      {
+        fieldFilter: {
+          field: { fieldPath: "projectId" },
+          op: "EQUAL",
+          value: encode(project),
+        },
+      },
+      ...(shared
+        ? [
+            {
+              fieldFilter: {
+                field: { fieldPath: "clientVisible" },
+                op: "EQUAL",
+                value: encode(true),
+              },
+            },
+          ]
+        : []),
+    ];
+    const docs = await this.call(`/interiorQueCompanies/${company}:runQuery`, {
+      structuredQuery: {
+        from: [{ collectionId: key }],
+        where:
+          filters.length === 1
+            ? filters[0]
+            : { compositeFilter: { op: "AND", filters } },
+        limit: 20,
+      },
+    });
+    return (docs as any[])
+      .filter((d) => d.document)
+      .map((d) => ({
+        ...record(d.document.fields || {}),
+        id: d.document.name.split("/").pop(),
+      }));
   }
   async transaction<T>(
     paths: string[],

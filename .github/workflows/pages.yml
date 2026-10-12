@@ -31,6 +31,7 @@ jobs:
         env:
           VITE_BASE_PATH: /Interior-Que/
           VITE_PHOTO_API_URL: ${{ vars.VITE_PHOTO_API_URL }}
+          VITE_ASSISTANT_API_URL: ${{ vars.VITE_ASSISTANT_API_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

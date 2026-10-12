@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, Check, ImagePlus, RotateCcw, Upload, X } from "lucide-react";
 import { Badge, Button, Modal } from "./components";
 import { asset } from "./assets";
+import { SmartField } from "./SmartField";
 import { uid, today } from "./model";
 import type { StudioFile, StudioProject } from "./studio-model";
 import {
@@ -220,16 +221,21 @@ export function PhotoUploader({
                 ))}
               </select>
             </label>
-            <label className="field">
-              <span>Room / area *</span>
-              <input
+            {started ? (
+              <label className="field">
+                <span>Room / area</span>
+                <input value={room} disabled />
+              </label>
+            ) : (
+              <SmartField
+                label="Room / area"
+                name="room"
+                category="rooms"
                 value={room}
-                disabled={started}
-                maxLength={120}
-                placeholder="e.g. Kitchen, first floor"
-                onChange={(e) => setRoom(e.target.value)}
+                onChange={setRoom}
+                required
               />
-            </label>
+            )}
           </div>
           <label className="field">
             <span>

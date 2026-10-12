@@ -4,6 +4,24 @@ Project management for interior firms: owners, designers, supervisors and client
 
 App: [Interior Que](https://chiran-koda.github.io/Interior-Que/)
 
+## Conversations, inbox and faster forms
+
+**Chat** has a separate team conversation and client conversation for each project. Assigned people can reply, mention up to five people, and attach up to two existing project photos. Clients can only use the shared conversation and shared photos. Team members can turn a message into an assigned task, snag or approval request after reviewing the copied text and audience. Each message can create one linked item of each kind, preventing duplicate conversions. Messages are immutable. The screen loads the latest 50 messages and can load older history; an inbox mention opens its referenced message even if it is older.
+
+**Inbox** brings together mentions, assignments, pending reviews, site blockers, due deliveries and collections according to the signed-in role. Opening an item marks it read. Mention records and read state sync through Firestore; other reminders are derived from current project records. This is an in-app inbox, without email, SMS or background push delivery.
+
+**Editable choices** let users select, search or type room names, materials, suppliers, units, finishes, brands, work categories and common task names. Typing a new value does not require maintaining a list first. Staff can explicitly save a value for reuse; owners can rename, archive and restore company choices in Settings. Renaming preserves historical records. Appropriate identity, status, role and permission fields retain constrained selectors.
+
+These workflows use company-scoped `chatMessages`, `chatActions`, `notifications`, `inboxReads` and `listValues` collections. Firestore rules enforce audience, project access, immutable authorship, same-channel replies, valid mentions and shared attachments. Chat listeners are limited to the selected project and audience; notification listeners are limited to the current recipient. Local demo messages never reach other users.
+
+## Shared project assistant
+
+The Assistant screen is available to owners, designers, supervisors and clients. Project overview, pending work, latest approved drawings and a client update draft work from permitted records now. **Shared generative AI is prepared but disconnected until the service owner supplies the key and connects the separate assistant Worker.** Companies and users do not enter their own API keys.
+
+The prepared Worker supports OpenAI Responses or Gemini structured output, selected once by the service owner. It verifies Firebase authentication and project access, fetches bounded role-permitted records on the server and rechecks membership before returning an answer. Clients receive shared project information; internal journals are owner-only. AI drafts tasks or site reports for human review; it never silently assigns work, sends a message or records a decision. Private atomic counters enforce daily global/company/user request limits. No live provider request or paid service was activated for this release.
+
+Follow [shared AI setup](docs/AI_SETUP.md) when the key is ready. Keep the key in a Worker secret; only the public service URL belongs in `VITE_ASSISTANT_API_URL`.
+
 ## Interior firm project tools
 
 Open a project to use **Budget / Payments, Selections, Extras, Drawings, Orders, Snags and Handover**. Tools adapt to the signed-in role. Money provides a budget overview; Materials links directly to each project's supplier orders. New projects open their workspace after creation.

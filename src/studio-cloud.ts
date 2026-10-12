@@ -26,6 +26,11 @@ import {
   setDoc,
   updateDoc,
   runTransaction,
+  serverTimestamp,
+  orderBy,
+  limit,
+  startAfter,
+  Timestamp,
   type Firestore,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -46,6 +51,14 @@ import {
   type OperationCollection,
 } from "./project-operations";
 import { developmentConfig } from "./firebase-development";
+import {
+  chatActionId,
+  type ChatMessage,
+  type ChatAction,
+  type ChatActionKind,
+  type ChatWorkRecord,
+  type CollaborationCollection,
+} from "./collaboration";
 
 export interface CloudConfig extends FirebaseOptions {
   apiKey: string;
@@ -215,6 +228,9 @@ export function watchStudio(
       | "cashOpenings"
       | "balanceOpenings"
       | OperationCollection
+      | "listValues"
+      | "notifications"
+      | "inboxReads"
     >,
     filters: any[] = [],
   ) => {
@@ -225,6 +241,9 @@ export function watchStudio(
           (data[key] as any[]) = snapshot.docs.map((d) => ({
             ...d.data(),
             id: d.id,
+            ...(key === "notifications"
+              ? { createdAt: d.data().createdAt?.toMillis?.() || 0 }
+              : {}),
           }));
           emit();
         },
@@ -236,6 +255,19 @@ export function watchStudio(
   else if (ids.length) listen("projects", [where(documentId(), "in", ids)]);
   if (client) data.members = [member];
   else listen("members");
+  listen(
+    "listValues",
+    client ? [where("category", "in", ["rooms", "finishes"])] : [],
+  );
+  listen("inboxReads", [where("userId", "==", member.id)]);
+  if (owner || ids.length)
+    listen("notifications", [
+      where("recipientId", "==", member.id),
+      ...(!owner ? [where("projectId", "in", ids)] : []),
+      ...(client ? [where("clientVisible", "==", true)] : []),
+      orderBy("createdAt", "desc"),
+      limit(100),
+    ]);
   if (owner) {
     for (const key of [
       "tasks",
@@ -314,6 +346,7 @@ export function watchStudio(
   return () => stops.forEach((stop) => stop());
 }
 type RecordCollection =
+  | CollaborationCollection
   | "projects"
   | "members"
   | "tasks"
@@ -367,6 +400,187 @@ export async function createProject(
     batch.set(doc(db, base(companyId), "tasks", id), data);
   }
   await batch.commit();
+}
+const chatRecord = (snapshot: any): ChatMessage => {
+  const fields = snapshot.data();
+  return {
+    ...fields,
+    id: snapshot.id,
+    createdAt: fields.createdAt?.toMillis?.() || 0,
+  };
+};
+export function watchConversation(
+  company: string,
+  project: string,
+  shared: boolean,
+  onData: (messages: ChatMessage[], actions: ChatAction[]) => void,
+  onError: (e: Error) => void,
+) {
+  let messages: ChatMessage[] = [],
+    actions: ChatAction[] = [];
+  const filters = [
+    where("projectId", "==", project),
+    where("clientVisible", "==", shared),
+  ];
+  const stops = [
+    onSnapshot(
+      query(
+        collection(db, base(company), "chatMessages"),
+        ...filters,
+        orderBy("createdAt", "desc"),
+        orderBy(documentId(), "desc"),
+        limit(50),
+      ),
+      (snapshot) => {
+        messages = snapshot.docs.map(chatRecord).reverse();
+        onData(messages, actions);
+      },
+      onError,
+    ),
+    onSnapshot(
+      query(
+        collection(db, base(company), "chatActions"),
+        ...filters,
+        orderBy("createdAt", "desc"),
+        limit(200),
+      ),
+      (snapshot) => {
+        actions = snapshot.docs.map((d) => ({
+          ...d.data(),
+          id: d.id,
+        })) as ChatAction[];
+        onData(messages, actions);
+      },
+      onError,
+    ),
+  ];
+  return () => stops.forEach((stop) => stop());
+}
+export async function olderConversation(
+  company: string,
+  project: string,
+  shared: boolean,
+  before: ChatMessage,
+) {
+  const snapshot = await getDocs(
+    query(
+      collection(db, base(company), "chatMessages"),
+      where("projectId", "==", project),
+      where("clientVisible", "==", shared),
+      orderBy("createdAt", "desc"),
+      orderBy(documentId(), "desc"),
+      startAfter(Timestamp.fromMillis(before.createdAt), before.id),
+      limit(50),
+    ),
+  );
+  return snapshot.docs.map(chatRecord).reverse();
+}
+export async function mentionedMessage(company: string, messageId: string) {
+  const snapshot = await getDoc(
+    doc(db, base(company), "chatMessages", messageId),
+  );
+  return snapshot.exists() ? chatRecord(snapshot) : null;
+}
+export async function sendMessage(company: string, message: ChatMessage) {
+  const existing = await getDoc(
+    doc(db, base(company), "chatMessages", message.id),
+  );
+  if (existing.exists()) {
+    if (
+      existing.data().authorId === message.authorId &&
+      existing.data().body === message.body &&
+      existing.data().projectId === message.projectId &&
+      existing.data().clientVisible === message.clientVisible
+    )
+      return;
+    throw new Error(
+      "An earlier version of this message was already delivered. Reopen the conversation before sending a new message.",
+    );
+  }
+  const batch = writeBatch(db),
+    { id, ...record } = message;
+  batch.set(doc(db, base(company), "chatMessages", id), {
+    ...record,
+    createdAt: serverTimestamp(),
+  });
+  for (const recipientId of message.mentions.filter(
+    (id) => id !== message.authorId,
+  ))
+    batch.set(doc(db, base(company), "notifications", `${id}_${recipientId}`), {
+      projectId: message.projectId,
+      messageId: id,
+      recipientId,
+      authorId: message.authorId,
+      authorName: message.authorName,
+      createdAt: serverTimestamp(),
+      clientVisible: message.clientVisible,
+      read: false,
+    });
+  await batch.commit();
+}
+export async function convertMessage(
+  company: string,
+  message: ChatMessage,
+  kind: ChatActionKind,
+  record: ChatWorkRecord,
+  authorId: string,
+) {
+  const actionId = chatActionId(message.id, kind),
+    actionRef = doc(db, base(company), "chatActions", actionId),
+    key = kind === "task" ? "tasks" : kind === "snag" ? "snags" : "approvals";
+  await runTransaction(db, async (tx) => {
+    const original = await tx.get(
+        doc(db, base(company), "chatMessages", message.id),
+      ),
+      existing = await tx.get(actionRef);
+    if (!original.exists() || existing.exists())
+      throw new Error(
+        "This message already has that linked item, or is no longer available.",
+      );
+    if (
+      original.data().projectId !== record.projectId ||
+      record.id !== actionId
+    )
+      throw new Error("The linked item must stay in this project.");
+    const projectRef = doc(db, base(company), "projects", record.projectId);
+    let progress: number | undefined;
+    if (kind === "task") {
+      await tx.get(projectRef);
+      const tasks = await getDocs(
+        query(
+          collection(db, base(company), "tasks"),
+          where("projectId", "==", record.projectId),
+        ),
+      );
+      const records = await Promise.all(tasks.docs.map((d) => tx.get(d.ref)));
+      progress = Math.round(
+        (records.filter((s) => s.data()?.status === "Done").length /
+          (records.length + 1)) *
+          100,
+      );
+    }
+    const { id, ...fields } = record;
+    tx.set(doc(db, base(company), key, id), fields);
+    tx.set(actionRef, {
+      messageId: message.id,
+      projectId: record.projectId,
+      kind,
+      recordId: id,
+      authorId,
+      clientVisible: original.data().clientVisible,
+      createdAt: serverTimestamp(),
+    });
+    if (progress !== undefined)
+      tx.update(projectRef, {
+        progress,
+        status:
+          progress === 100
+            ? "Completed"
+            : progress > 0
+              ? "In progress"
+              : "Planning",
+      });
+  });
 }
 export async function createDrawing(company: string, drawing: Drawing) {
   const groupId = drawingGroup(drawing.room, drawing.title);

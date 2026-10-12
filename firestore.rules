@@ -75,7 +75,7 @@ service cloud.firestore {
     allow read, write: if false;
    }
    match /materials/{material} {
-    function validMaterial(data){return data.keys().hasOnly(['projectId','name','quantity','unit','status','notes']) && text(data.projectId,100) && text(data.name,300) && data.quantity is number && data.quantity>0 && text(data.unit,40) && data.status in ['To order','Ordered','On site'] && text(data.notes,2000);}
+    function validMaterial(data){return data.keys().hasOnly(['projectId','name','quantity','unit','status','notes','brand','category']) && text(data.projectId,100) && text(data.name,300) && data.quantity is number && data.quantity>0 && text(data.unit,40) && data.status in ['To order','Ordered','On site'] && text(data.notes,2000) && (!('brand' in data) || text(data.brand,120)) && (!('category' in data) || text(data.category,120));}
     allow read: if assignedStaff(company,resource.data.projectId);
     allow create: if validMaterial(request.resource.data) && assignedStaff(company,request.resource.data.projectId) && projectExists(company,request.resource.data.projectId);
     allow update: if validMaterial(request.resource.data) && request.resource.data.projectId == resource.data.projectId && assignedStaff(company,resource.data.projectId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
@@ -85,6 +85,46 @@ service cloud.firestore {
     allow read: if owner(company);
     allow create, update: if owner(company) && valid(request.resource.data);
    }
+   match /listValues/{entry} {
+    function valid(data){return data.keys().hasOnly(['category','value','active']) && data.category in ['rooms','materials','suppliers','units','finishes','brands','workCategories','taskNames'] && text(data.value,120) && data.value.size()>0 && (data.category!='units' || data.value.size()<=40) && data.active is bool;}
+    allow read: if member(company) && (staff(company) || resource.data.category in ['rooms','finishes']);
+    allow create: if staff(company) && valid(request.resource.data) && (request.resource.data.active==true || owner(company));
+    allow update: if valid(request.resource.data) && (owner(company) || (staff(company) && resource.data.active==true && request.resource.data==resource.data));
+   }
+   match /chatMessages/{message} {
+    function chatVisible(data){let person=get(memberPath(company)).data;return signed() && person.active==true && (person.role=='owner' || data.projectId in person.projectIds) && (person.role in ['owner','designer','supervisor'] || data.clientVisible==true);}
+    function target(data,user){let person=get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(user)).data;return text(user,128) && person.active==true && (person.role=='owner' || data.projectId in person.projectIds) && (person.role!='client' || data.clientVisible==true);}
+    function mentions(data){return data.mentions is list && data.mentions.size()<=5 && data.mentions.toSet().size()==data.mentions.size() && (data.mentions.size()<1 || target(data,data.mentions[0])) && (data.mentions.size()<2 || target(data,data.mentions[1])) && (data.mentions.size()<3 || target(data,data.mentions[2])) && (data.mentions.size()<4 || target(data,data.mentions[3])) && (data.mentions.size()<5 || target(data,data.mentions[4]));}
+    function attachedPhoto(data,id){let file=get(/databases/$(database)/documents/interiorQueCompanies/$(company)/files/$(id)).data;return text(id,100) && id!='' && file.projectId==data.projectId && (!data.clientVisible || file.clientVisible==true);}
+    function attachments(data){return data.photoIds is list && data.photoIds.size()<=2 && (data.photoIds.size()<1 || attachedPhoto(data,data.photoIds[0])) && (data.photoIds.size()<2 || attachedPhoto(data,data.photoIds[1]));}
+    function reply(data){return data.replyTo=='' || (text(data.replyTo,100) && get(/databases/$(database)/documents/interiorQueCompanies/$(company)/chatMessages/$(data.replyTo)).data.projectId==data.projectId && get(/databases/$(database)/documents/interiorQueCompanies/$(company)/chatMessages/$(data.replyTo)).data.clientVisible==data.clientVisible);}
+    function valid(data){return data.keys().hasOnly(['projectId','authorId','authorName','body','createdAt','clientVisible','replyTo','mentions','photoIds']) && text(data.projectId,100) && projectExists(company,data.projectId) && data.authorId==request.auth.uid && data.authorName==get(memberPath(company)).data.name && text(data.authorName,120) && text(data.body,4000) && (data.body.size()>0 || data.photoIds.size()>0) && data.createdAt==request.time && data.clientVisible is bool && mentions(data) && attachments(data) && reply(data);}
+    allow get: if (resource==null && member(company)) || chatVisible(resource.data);
+    allow list: if chatVisible(resource.data);
+    allow create: if chatVisible(request.resource.data) && valid(request.resource.data);
+   }
+   match /chatActions/{action} {
+    function source(data){return get(/databases/$(database)/documents/interiorQueCompanies/$(company)/chatMessages/$(data.messageId)).data;}
+    function linked(data){let kind=data.kind=='task'?'tasks':data.kind=='snag'?'snags':'approvals';return getAfter(/databases/$(database)/documents/interiorQueCompanies/$(company)/$(kind)/$(data.recordId)).data.projectId==data.projectId;}
+    function valid(data){return data.keys().hasOnly(['messageId','projectId','kind','recordId','authorId','clientVisible','createdAt']) && text(data.messageId,100) && data.kind in ['task','snag','approval'] && action==data.messageId+'_'+data.kind && data.recordId==action && data.authorId==request.auth.uid && data.createdAt==request.time && source(data).projectId==data.projectId && data.clientVisible==source(data).clientVisible && linked(data);}
+    allow get: if (resource==null && staff(company)) || visible(company,resource.data);
+    allow list: if visible(company,resource.data);
+    allow create: if assignedStaff(company,request.resource.data.projectId) && valid(request.resource.data);
+   }
+   match /notifications/{notice} {
+    function source(data){return getAfter(/databases/$(database)/documents/interiorQueCompanies/$(company)/chatMessages/$(data.messageId)).data;}
+    function target(data){let person=get(/databases/$(database)/documents/interiorQueCompanies/$(company)/members/$(data.recipientId)).data;return person.active==true && (person.role=='owner' || data.projectId in person.projectIds) && (person.role!='client' || data.clientVisible==true);}
+    function valid(data){return data.keys().hasOnly(['projectId','messageId','recipientId','authorId','authorName','createdAt','clientVisible','read']) && text(data.messageId,100) && text(data.recipientId,128) && notice==data.messageId+'_'+data.recipientId && data.authorId==request.auth.uid && data.authorName==source(data).authorName && source(data).authorId==request.auth.uid && source(data).createdAt==request.time && data.projectId==source(data).projectId && data.clientVisible==source(data).clientVisible && data.recipientId in source(data).mentions && data.recipientId!=request.auth.uid && data.createdAt==request.time && data.read==false && target(data);}
+    allow read: if visible(company,resource.data) && resource.data.recipientId==request.auth.uid;
+    allow create: if visible(company,request.resource.data) && valid(request.resource.data);
+    allow update: if visible(company,resource.data) && resource.data.recipientId==request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) && request.resource.data.read==true;
+   }
+   match /inboxReads/{user} {
+    function valid(data){return user==request.auth.uid && data.keys().hasOnly(['userId','keys']) && data.userId==user && data.keys is list && data.keys.size()<=300;}
+    allow read: if member(company) && resource.data.userId==request.auth.uid;
+    allow create,update: if member(company) && valid(request.resource.data);
+   }
+   match /aiPrivateUsage/{counter} { allow read,write: if false; }
    match /paymentSchedules/{milestone} {
     function valid(data){return data.keys().hasOnly(['projectId','title','amount','received','due','clientVisible']) && text(data.projectId,100) && projectExists(company,data.projectId) && text(data.title,300) && data.title.size()>0 && amount(data.amount) && data.amount>0 && amount(data.received) && date(data.due) && data.clientVisible is bool;}
     allow read: if owner(company) || (member(company) && !staff(company) && visible(company,resource.data));
