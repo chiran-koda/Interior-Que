@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -9,12 +9,15 @@ import {
   Tags,
   Search,
   CalendarDays,
+  Download,
+  FileText,
 } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import { Button, Empty, Field, Modal } from "./components";
 import { today, uid, dateLabel } from "./model";
 import {
   categoriesFor,
+  resolveTransactionCategory,
   formatMoney as money,
   categoryColors,
   availableBalance,
@@ -36,6 +39,8 @@ import type {
   StudioPayment,
 } from "./studio-model";
 import "./money.css";
+import { MoneyCategoryPicker } from "./MoneyCategoryPicker";
+import type { StudioProject } from "./studio-model";
 
 interface Props {
   data: StudioData;
@@ -446,10 +451,10 @@ export function MoneyWorkspace({
                           {p.type === "Received" && (
                             <button
                               className="icon-btn"
-                              aria-label={`Share receipt for ${p.description}`}
+                              aria-label={`Receipt for ${p.description}`}
                               onClick={() => setReceipt(p)}
                             >
-                              <MessageCircle size={17} />
+                              <FileText size={17} />
                             </button>
                           )}
                         </div>
@@ -494,6 +499,7 @@ export function MoneyWorkspace({
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={onSave}
+          onCategory={onCategory}
         />
       )}
       {categoryDialog && (
@@ -514,34 +520,95 @@ export function MoneyWorkspace({
         />
       )}
       {receipt && project && (
-        <Modal
-          title="Share payment receipt"
-          subtitle="Review the message before opening WhatsApp."
+        <PaymentReceipt
+          studio={data.name}
+          project={project}
+          payment={receipt}
+          category={
+            categories.find((c) => c.id === paymentCategory(receipt))?.name
+          }
           onClose={() => setReceipt(null)}
-        >
-          <div className="money-receipt-preview">
-            {receiptMessage(data.name, project, receipt)}
-          </div>
-          <p className="money-share-hint">
-            Choose your client in WhatsApp and send the message yourself.
-          </p>
-          <div className="money-modal-actions">
-            <Button onClick={() => setReceipt(null)}>Close</Button>
-            <a
-              className="btn primary"
-              href={receiptWhatsAppUrl(
-                receiptMessage(data.name, project, receipt),
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <MessageCircle size={17} />
-              Open WhatsApp
-            </a>
-          </div>
-        </Modal>
+        />
       )}
     </div>
+  );
+}
+
+function PaymentReceipt({
+  studio,
+  project,
+  payment,
+  category,
+  onClose,
+}: {
+  studio: string;
+  project: StudioProject;
+  payment: StudioPayment;
+  category?: string;
+  onClose: () => void;
+}) {
+  const [downloading, setDownloading] = useState(false),
+    [error, setError] = useState("");
+  const lock = useRef(false);
+  const download = async () => {
+    if (lock.current) return;
+    lock.current = true;
+    setDownloading(true);
+    setError("");
+    try {
+      const { downloadPaymentReceipt } = await import("./payment-receipt");
+      await downloadPaymentReceipt(studio, project, payment, category);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "The PDF could not be prepared. Please try again.",
+      );
+    } finally {
+      lock.current = false;
+      setDownloading(false);
+    }
+  };
+  return (
+    <Modal
+      title="Payment receipt"
+      subtitle="Download a PDF or review the message before opening WhatsApp."
+      onClose={() => {
+        if (!lock.current) onClose();
+      }}
+      closeDisabled={downloading}
+    >
+      <div className="money-receipt-preview">
+        {receiptMessage(studio, project, payment)}
+      </div>
+      <p className="money-share-hint">
+        Download the PDF to keep a copy or attach it in WhatsApp. Choose your
+        client and send the message yourself.
+      </p>
+      {error && (
+        <p className="studio-error money-receipt-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="money-modal-actions">
+        <Button disabled={downloading} onClick={onClose}>
+          Close
+        </Button>
+        <Button variant="primary" disabled={downloading} onClick={download}>
+          <Download size={17} />
+          {downloading ? "Preparing PDF…" : "Download PDF"}
+        </Button>
+        <a
+          className="btn secondary"
+          href={receiptWhatsAppUrl(receiptMessage(studio, project, payment))}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <MessageCircle size={17} />
+          Open WhatsApp
+        </a>
+      </div>
+    </Modal>
   );
 }
 
@@ -553,6 +620,7 @@ function PaymentEditor({
   busy,
   onClose,
   onSave,
+  onCategory,
 }: {
   record?: StudioPayment;
   projectId: string;
@@ -561,17 +629,22 @@ function PaymentEditor({
   busy: boolean;
   onClose: () => void;
   onSave: Props["onSave"];
+  onCategory: Props["onCategory"];
 }) {
   const [type, setType] = useState<StudioPayment["type"]>(
     record?.type || "Received",
   );
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const lock = useRef(false),
+    proposedCategory = useRef<MoneyCategory | null>(null);
   const [id] = useState(record?.id || uid());
   const [selectedProjectId, setSelectedProjectId] = useState(
     record?.projectId || projectId || data.projects[0]?.id || "",
   );
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (lock.current || busy) return;
     setError("");
     const fd = new FormData(e.currentTarget),
       f = (key: string) => String(fd.get(key) || "").trim();
@@ -583,13 +656,12 @@ function PaymentEditor({
       const selectedProject = record?.projectId || f("projectId");
       if (!data.projects.some((p) => p.id === selectedProject))
         throw new Error("Choose an available project.");
-      const category = categories.find((c) => c.id === f("categoryId"));
-      if (
-        !category ||
-        category.type !== type ||
-        (!category.active && category.id !== record?.categoryId)
-      )
-        throw new Error("Choose an active category for this transaction.");
+      const resolved = resolveTransactionCategory(
+        categories,
+        type,
+        f("categoryName"),
+        record ? paymentCategory(record) : "",
+      );
       const mode = f("mode") as StudioPayment["mode"];
       if (!paymentModes.includes(mode!))
         throw new Error("Choose a payment method.");
@@ -601,6 +673,29 @@ function PaymentEditor({
         )
       )
         throw new Error("Choose a milestone from this project.");
+      const date = validDate(f("date"));
+      lock.current = true;
+      setSubmitting(true);
+      let category = resolved.category;
+      if (!category) {
+        if (
+          !proposedCategory.current ||
+          proposedCategory.current.name !== resolved.name ||
+          proposedCategory.current.type !== type
+        )
+          proposedCategory.current = {
+            id: uid(),
+            name: resolved.name,
+            type,
+            color: categoryColors[0],
+            active: true,
+          };
+        category = proposedCategory.current;
+        if (!(await onCategory(category)))
+          throw new Error(
+            "The new category could not be saved. Your transaction has not been saved; retry when connected.",
+          );
+      }
       if (
         await onSave({
           id,
@@ -608,7 +703,7 @@ function PaymentEditor({
           type,
           amount,
           description,
-          date: validDate(f("date")),
+          date,
           categoryId: category.id,
           mode,
           ...(milestoneId ? { milestoneId } : {}),
@@ -621,6 +716,9 @@ function PaymentEditor({
         );
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      lock.current = false;
+      setSubmitting(false);
     }
   };
   return (
@@ -632,133 +730,128 @@ function PaymentEditor({
           : "Choose the project, amount and category."
       }
       onClose={() => {
-        if (!busy) onClose();
+        if (!busy && !lock.current) onClose();
       }}
+      closeDisabled={busy || submitting}
     >
       <form className="studio-form" onSubmit={submit}>
-        <div className="form-grid">
-          <label className="field">
-            <span>Transaction type</span>
-            <select
-              aria-label="Transaction type"
-              value={type}
-              disabled={!!record}
-              onChange={(e) => setType(e.target.value as StudioPayment["type"])}
-            >
-              <option value="Received">Income received</option>
-              <option value="Spent">Expense paid</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Project *</span>
-            <select
-              name="projectId"
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
+        <fieldset disabled={busy || submitting}>
+          <div className="form-grid">
+            <label className="field">
+              <span>Transaction type</span>
+              <select
+                aria-label="Transaction type"
+                value={type}
+                disabled={!!record}
+                onChange={(e) =>
+                  setType(e.target.value as StudioPayment["type"])
+                }
+              >
+                <option value="Received">Income received</option>
+                <option value="Spent">Expense paid</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Project *</span>
+              <select
+                name="projectId"
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                required
+              >
+                {data.projects
+                  .filter((p) => !record || p.id === record.projectId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <Field
+              label="Amount (₹)"
+              name="amount"
+              value={record?.amount}
+              type="number"
+              min={0.01}
+              step="0.01"
+              required
+            />
+            <Field
+              label="Date"
+              name="date"
+              type="date"
+              value={record?.date || today()}
+              required
+            />
+            <MoneyCategoryPicker
+              key={type}
+              categories={categories}
+              type={type}
+              currentId={record ? paymentCategory(record) : ""}
+              disabled={busy || submitting}
+            />
+            <Field
+              label="Payment method"
+              name="mode"
+              value={record?.mode || (record ? "Unspecified" : "Bank transfer")}
               required
             >
-              {data.projects
-                .filter((p) => !record || p.id === record.projectId)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
+              {paymentModes.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </Field>
+          </div>
+          {type === "Received" && (
+            <Field
+              key={selectedProjectId}
+              label="Payment milestone (optional)"
+              name="milestoneId"
+              value={record?.milestoneId || ""}
+            >
+              <option value="">No milestone</option>
+              {(data.paymentSchedules || [])
+                .filter((s) => s.projectId === selectedProjectId)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
                   </option>
                 ))}
-            </select>
-          </label>
+            </Field>
+          )}
           <Field
-            label="Amount (₹)"
-            name="amount"
-            value={record?.amount}
-            type="number"
-            min={0.01}
-            step="0.01"
+            label="Description"
+            name="description"
+            value={record?.description}
+            placeholder="e.g. Advance payment or plywood purchase"
             required
           />
-          <Field
-            label="Date"
-            name="date"
-            type="date"
-            value={record?.date || today()}
-            required
-          />
-          <Field
-            key={type}
-            label="Category"
-            name="categoryId"
-            value={
-              record
-                ? paymentCategory(record)
-                : type === "Received"
-                  ? "inc-client"
-                  : "exp-materials"
-            }
-            required
-          >
-            {categories
-              .filter(
-                (c) =>
-                  c.type === type && (c.active || c.id === record?.categoryId),
-              )
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.active ? "" : " (archived)"}
-                </option>
-              ))}
-          </Field>
-          <Field
-            label="Payment method"
-            name="mode"
-            value={record?.mode || (record ? "Unspecified" : "Bank transfer")}
-            required
-          >
-            {paymentModes.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </Field>
-        </div>
-        {type === "Received" && (
-          <Field
-            key={selectedProjectId}
-            label="Payment milestone (optional)"
-            name="milestoneId"
-            value={record?.milestoneId || ""}
-          >
-            <option value="">No milestone</option>
-            {(data.paymentSchedules || [])
-              .filter((s) => s.projectId === selectedProjectId)
-              .map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-          </Field>
-        )}
-        <Field
-          label="Description"
-          name="description"
-          value={record?.description}
-          placeholder="e.g. Advance payment or plywood purchase"
-          required
-        />
-        {error && (
-          <p className="studio-error" role="alert">
-            {error}
+          {error && (
+            <p className="studio-error" role="alert">
+              {error}
+            </p>
+          )}
+          <p className="form-hint">
+            Visible only to the company owner. Saving records this payment; it
+            doesn’t transfer money.
           </p>
-        )}
-        <p className="form-hint">
-          Visible only to the company owner. Saving records this payment; it
-          doesn’t transfer money.
-        </p>
-        <div className="money-modal-actions">
-          <Button disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" type="submit" disabled={busy}>
-            {busy ? "Saving…" : record ? "Save changes" : "Save transaction"}
-          </Button>
-        </div>
+          <div className="money-modal-actions">
+            <Button disabled={busy || submitting} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              type="submit"
+              disabled={busy || submitting}
+            >
+              {busy || submitting
+                ? "Saving…"
+                : record
+                  ? "Save changes"
+                  : "Save transaction"}
+            </Button>
+          </div>
+        </fieldset>
       </form>
     </Modal>
   );

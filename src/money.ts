@@ -57,6 +57,54 @@ export function categoriesFor(custom: MoneyCategory[] = []) {
   custom.forEach((c) => merged.set(c.id, c));
   return [...merged.values()];
 }
+export const categoryNameKey = (name: string) =>
+  name.trim().replace(/\s+/g, " ").toLowerCase();
+export function transactionCategoryOptions(
+  categories: MoneyCategory[],
+  type: StudioPayment["type"],
+  currentId = "",
+) {
+  return categories.filter(
+    (c) => c.type === type && (c.active || c.id === currentId),
+  );
+}
+export function initialTransactionCategory(
+  categories: MoneyCategory[],
+  type: StudioPayment["type"],
+  currentId = "",
+) {
+  const options = transactionCategoryOptions(categories, type, currentId);
+  return (
+    options.find((c) => c.id === currentId) ||
+    options.find(
+      (c) => c.id === (type === "Received" ? "inc-client" : "exp-materials"),
+    )
+  );
+}
+// Resolve names within the transaction type, never revive an archived choice implicitly.
+export function resolveTransactionCategory(
+  categories: MoneyCategory[],
+  type: StudioPayment["type"],
+  name: string,
+  currentId = "",
+) {
+  const value = name.trim().replace(/\s+/g, " ");
+  if (!value || value.length > 60)
+    throw new Error("Choose or type a category of 1–60 characters.");
+  const matches = categories.filter(
+    (c) =>
+      c.type === type && categoryNameKey(c.name) === categoryNameKey(value),
+  );
+  const category =
+    matches.find((c) => c.id === currentId) ||
+    matches.find((c) => c.active) ||
+    matches[0];
+  if (category && !category.active && category.id !== currentId)
+    throw new Error(
+      "This category is archived. Restore it in Categories or choose a different name.",
+    );
+  return { name: value, category };
+}
 export const paymentCategory = (p: StudioPayment) =>
   p.categoryId || (p.type === "Spent" ? "exp-other" : "inc-client");
 export const cents = (n: number) => Math.round(n * 100);

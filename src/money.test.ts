@@ -3,6 +3,9 @@ import {
   availableBalance,
   cashBalance,
   categoriesFor,
+  initialTransactionCategory,
+  resolveTransactionCategory,
+  transactionCategoryOptions,
   expenseBreakdown,
   filterPayments,
   formatMoney,
@@ -64,6 +67,75 @@ const payments: StudioPayment[] = [
   },
 ];
 describe("money journal and calculations", () => {
+  it("requires a deliberate choice when the default category is archived", () => {
+    const categories = categoriesFor([
+      {
+        id: "inc-client",
+        name: "Client payments",
+        type: "Received",
+        color: "#059669",
+        active: false,
+      },
+    ]);
+    expect(initialTransactionCategory(categories, "Received")).toBeUndefined();
+    expect(
+      initialTransactionCategory(categories, "Received", "inc-client")?.id,
+    ).toBe("inc-client");
+    expect(
+      transactionCategoryOptions(categories, "Spent").every(
+        (c) => c.type === "Spent",
+      ),
+    ).toBe(true);
+    expect(
+      initialTransactionCategory(
+        categories.map((c) => ({ ...c, active: false })),
+        "Received",
+      ),
+    ).toBeUndefined();
+  });
+  it("reuses an existing category regardless of casing or extra spaces", () => {
+    const result = resolveTransactionCategory(
+      categoriesFor(),
+      "Spent",
+      "  labour    PAYMENTS ",
+    );
+    expect(result.category?.id).toBe("exp-labour");
+    expect(
+      resolveTransactionCategory(categoriesFor(), "Received", "Labour payments")
+        .category,
+    ).toBeUndefined();
+    expect(
+      resolveTransactionCategory(categoriesFor(), "Spent", "Site supervision"),
+    ).toEqual({ name: "Site supervision", category: undefined });
+  });
+  it("retains an archived category only for its existing transaction and validates new names", () => {
+    const categories = categoriesFor([
+      {
+        id: "exp-labour",
+        name: "Labour payments",
+        type: "Spent",
+        active: false,
+        color: "#4f46e5",
+      },
+    ]);
+    expect(() =>
+      resolveTransactionCategory(categories, "Spent", "Labour payments"),
+    ).toThrow("archived");
+    expect(
+      resolveTransactionCategory(
+        categories,
+        "Spent",
+        "Labour payments",
+        "exp-labour",
+      ).category?.id,
+    ).toBe("exp-labour");
+    expect(() =>
+      resolveTransactionCategory(categories, "Spent", "  "),
+    ).toThrow();
+    expect(() =>
+      resolveTransactionCategory(categories, "Spent", "a".repeat(61)),
+    ).toThrow();
+  });
   it("combines every payment method and declares the zero-opening assumption", () => {
     expect(availableBalance(payments, [], ["p1"], "2026-09-30")).toEqual({
       amount: 120.1,
